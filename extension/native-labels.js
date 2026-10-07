@@ -15,6 +15,7 @@
       { name: 'glyphInitialize', function: 68187 },
       { name: 'windowText', function: 56350 }, { name: 'windowClear', function: 56344 },
       { name: 'windowLog', function: 56351 }, { name: 'windowDispose', function: 56357 },
+      { name: 'windowShow', function: 67661 },
     ],
     exports: { __uwt_string: 151240, __uwt_label_text: 31006, __uwt_root: 167969, __uwt_unroot: 167959,
       __uwt_type: 1616, __uwt_array: 1319, __uwt_write_file: 143267, __uwt_create_font: 31790,
@@ -22,7 +23,8 @@
       __uwt_font_material: 4636, __uwt_label_material: 5142, __uwt_set_material: 31011,
       __uwt_color: 31017, __uwt_set_color: 31018, __uwt_property: 129310,
       __uwt_has_property: 129494, __uwt_material_color: 129475,
-      __uwt_fallbacks: 14415, __uwt_clear_fallbacks: 31812, __uwt_dirty: 31134 },
+      __uwt_fallbacks: 14415, __uwt_clear_fallbacks: 31812, __uwt_dirty: 31134,
+      __uwt_balloon_complete: 66110 },
   }, {
     sha256: 'bd48af8399673bb377a0c4274432f53c0790b006050a2ecd50c8f9c72af6f406',
     importedFunctions: 701,
@@ -271,7 +273,7 @@
         dropWindow(pointer);
         if (!options.active() || !options.enabled('story') || !text.trim() || windows.size >= 16) return original(pointer, value, info);
         register(text, 'story');
-        const roots = [], slot = { roots, initialized: false, release: null };
+        const roots = [], slot = { roots, initialized: false, output: null, release: null };
         let started = false;
         try {
           roots.push(exports.__uwt_root(pointer, 0, 2), exports.__uwt_root(value, 0, 2));
@@ -279,13 +281,14 @@
           windows.set(pointer, slot);
           const apply = output => {
             if (windows.get(pointer) !== slot || disposed) return;
+            if (slot.initialized && slot.output === output) return;
             let temporary = 0;
             const previousBusy = busy, previousReplay = replaying;
             try {
               const next = output === text ? value : string(output);
               if (output !== text) { temporary = exports.__uwt_root(next, 0, 2); if (!temporary) return; }
               busy = true; replaying = slot.initialized; started = true;
-              original(pointer, next, info); slot.initialized = true;
+              original(pointer, next, info); slot.initialized = true; slot.output = output;
             } finally { if (temporary) exports.__uwt_unroot(temporary); busy = previousBusy; replaying = previousReplay; }
           };
           slot.release = options.bind('native-window-' + pointer, text, apply, { kind: 'story', speaker, scene: 'native-' + scene });
@@ -299,6 +302,10 @@
       windowClear(original, pointer, info) { if (!busy) dropWindow(pointer); return original(pointer, info); },
       windowLog(original, pointer, value, info) { if (!replaying) return original(pointer, value, info); },
       windowDispose(original, pointer, info) { dropWindow(pointer); return original(pointer, info); },
+      windowShow(original, pointer, letters, positions, variant, immediately, info) {
+        // Refresh visibility only; native timing, interrupts and command completion stay intact.
+        return original(pointer, letters, positions, variant, replaying ? 1 : immediately, info);
+      },
       balloonStart(original, pointer, value, windowType, fontSize, info) {
         let label;
         try {
@@ -308,7 +315,15 @@
           drop(label); register(text, 'story');
           const context = sources.get(key(text));
           // A balloon owns one complete sentence. Its per-frame prefixes are not UI requests.
-          bind(label, value, (_label, output) => original(pointer, output, windowType, fontSize, info), pointer, context);
+          let initialized = false, lastOutput;
+          bind(label, value, (_label, output) => {
+            const next = read(output, 10000);
+            if (initialized && lastOutput === next) return;
+            const refresh = initialized;
+            original(pointer, output, windowType, fontSize, info);
+            initialized = true; lastOutput = next;
+            if (refresh) exports.__uwt_balloon_complete?.(pointer, 0);
+          }, pointer, context);
           if (!slots.has(label)) return original(pointer, value, windowType, fontSize, info);
           balloons.add(label); options.onStory?.();
           return;

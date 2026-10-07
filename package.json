@@ -1,6 +1,6 @@
 {
   "name": "unity-web-translator",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "private": true,
   "description": "A browser extension for translating Unity Web text.",
   "type": "module",
