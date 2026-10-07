@@ -8,7 +8,7 @@
   const pending = new Map(), held = new Set(), bindings = new Map();
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.4', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.5', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
@@ -213,11 +213,12 @@
     disposeWasm = globalThis.__UnityWasmTools.install({
       builds: globalThis.__UnityNativeLabels.builds,
       enabled: () => !disposed && !prefs.profileRequired && !!prefs.profileId,
-      createHandlers(exports) {
+      createHandlers(exports, build) {
         nativeLabels = globalThis.__UnityNativeLabels.create(exports, {
           active: () => !disposed && !prefs.profileRequired && !prefs.paused,
           enabled, translate, bind, resetHistory: publicApi.resetHistory,
           context: () => epoch, lookahead: () => prefs.prefetchLookahead ?? 3,
+          font: build.font,
           onBound: () => { stats.nativeLabelCalls++; },
           onStory: () => { stats.nativeStoryCalls++; }, loadFont,
           fontStatus: value => { stats.fontStatus = value; console.info('[Unity Web Translator] font=' + value); },

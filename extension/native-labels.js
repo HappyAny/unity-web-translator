@@ -5,6 +5,7 @@
   const builds = [{
     sha256: '62bd9e5b555b392b10c20e83f52ed118326702a51fc74fa4d4e10250105d8d15',
     importedFunctions: 624,
+    font: { byteArrayTypeAddress: 9899276 },
     hooks: [
       { name: 'labelSet', function: 31008 }, { name: 'labelEnable', function: 31532 },
       { name: 'labelDisable', function: 31534 }, { name: 'labelDestroy', function: 31535 },
@@ -22,9 +23,28 @@
       __uwt_color: 31017, __uwt_set_color: 31018, __uwt_property: 129310,
       __uwt_has_property: 129494, __uwt_material_color: 129475,
       __uwt_fallbacks: 14415, __uwt_clear_fallbacks: 31812, __uwt_dirty: 31134 },
+  }, {
+    sha256: 'bd48af8399673bb377a0c4274432f53c0790b006050a2ecd50c8f9c72af6f406',
+    importedFunctions: 701,
+    font: { byteArrayTypeAddress: 13964456 },
+    hooks: [
+      { name: 'labelSet', function: 34714 }, { name: 'labelEnable', function: 33200 },
+      { name: 'labelDisable', function: 33202 }, { name: 'labelDestroy', function: 33203 },
+      { name: 'revealText', function: 139786 }, { name: 'nameSet', function: 139902 },
+      { name: 'scriptPrefetch', function: 54652 },
+    ],
+    exports: { __uwt_string: 198601, __uwt_label_text: 34712, __uwt_root: 220084, __uwt_unroot: 220070,
+      __uwt_type: 2388, __uwt_array: 2032, __uwt_write_file: 181784, __uwt_create_font: 33612,
+      __uwt_font: 25121, __uwt_set_font: 34717, __uwt_add_chars: 33666,
+      __uwt_font_material: 25085, __uwt_label_material: 32638, __uwt_set_material: 34718,
+      __uwt_color: 34724, __uwt_set_color: 34725, __uwt_property: 156346,
+      __uwt_has_property: 156764, __uwt_material_color: 156746,
+      __uwt_fallbacks: 31253, __uwt_clear_fallbacks: 33634, __uwt_dirty: 34841,
+      __uwt_reveal_progress: 139989, __uwt_set_reveal_progress: 139990, __uwt_mesh: 33191 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
+    const revealable = new Set();
     let scene = 0, speaker = '', busy = false, replaying = false, disposed = false;
     const memory = exports.memory;
     if (!(memory instanceof WebAssembly.Memory)) throw new Error('Native memory unavailable');
@@ -53,7 +73,7 @@
         return exports.__uwt_string(buffer, 0, text.length, 0);
       } finally { exports.free(buffer); }
     }
-    const font = root.__UnityNativeFont?.create(exports, { string, load: options.loadFont, status: options.fontStatus,
+    const font = root.__UnityNativeFont?.create(exports, { ...options.font, string, load: options.loadFont, status: options.fontStatus,
       active: () => options.active() && (options.enabled('story') || options.enabled('ui')),
       ready: () => { for (const slot of slots.values()) if (slot.output !== slot.text) slot.apply?.(slot.output); } });
     function drop(pointer) {
@@ -82,7 +102,8 @@
       const context = knownContext || sources.get(key(text)), kind = context?.kind || 'ui';
       if (!options.enabled(kind) || (!context && !japanese(text))) { drop(pointer); return; }
       if (context?.original) { text = context.original; value = string(text); }
-      if (slots.get(pointer)?.text === text) return;
+      const current = slots.get(pointer);
+      if (current?.text === text) { if (current.output !== text) current.apply?.(current.output); return; }
       drop(pointer); if (slots.size >= 256) return;
       const roots = [];
       try {
@@ -126,7 +147,7 @@
     function reset() {
       for (const pointer of [...slots.keys()]) drop(pointer);
       for (const pointer of [...windows.keys()]) dropWindow(pointer);
-      sources.clear(); translated.clear(); glyphs.clear(); speaker = ''; scene++;
+      sources.clear(); translated.clear(); glyphs.clear(); revealable.clear(); speaker = ''; scene++;
     }
     function rows(text) {
       // Read only a bounded CSV sample for prefetch. The original script is untouched.
@@ -145,18 +166,52 @@
       labelSet(original, pointer, value, info) {
         const result = original(pointer, value, info);
         try { font?.observe(pointer, read(value)); } catch { /* Font observation never blocks native text. */ }
-        if (balloons.has(pointer)) return result;
+        if (balloons.has(pointer) || revealable.has(pointer)) return result;
         try { bind(pointer, value, original); } catch { /* Preserve the native setter's result. */ }
         return result;
       },
       labelEnable(original, pointer, info) {
         const result = original(pointer, info);
         try { font?.observe(pointer, read(exports.__uwt_label_text(pointer, 0))); } catch { /* Component not ready. */ }
-        try { bind(pointer, exports.__uwt_label_text(pointer, 0), exports.__uwt_original_labelSet); } catch { /* Component not ready. */ }
+        if (!revealable.has(pointer)) try { bind(pointer, exports.__uwt_label_text(pointer, 0), exports.__uwt_original_labelSet); } catch { /* Component not ready. */ }
         return result;
       },
-      labelDisable(original, pointer, info) { try { drop(pointer); font?.forget(pointer); glyphs.delete(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
-      labelDestroy(original, pointer, info) { try { drop(pointer); font?.forget(pointer); glyphs.delete(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
+      labelDisable(original, pointer, info) { try { drop(pointer); font?.forget(pointer); glyphs.delete(pointer); revealable.delete(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
+      labelDestroy(original, pointer, info) { try { drop(pointer); font?.forget(pointer); glyphs.delete(pointer); revealable.delete(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
+      revealText(original, pointer, value, info) {
+        if (busy || disposed) return original(pointer, value, info);
+        if (revealable.size < 256) revealable.add(pointer);
+        const result = original(pointer, value, info);
+        try {
+          const text = read(value); register(text, 'story');
+          let initial = true;
+          // Refresh only the renderer. The script source, backlog, voice and command execution stay native.
+          bind(pointer, value, (_label, next) => {
+            if (initial) { initial = false; return; }
+            const progress = exports.__uwt_reveal_progress(pointer, 0);
+            original(pointer, next, info);
+            exports.__uwt_mesh(pointer, 0, 1, 0);
+            if (Number.isFinite(progress)) exports.__uwt_set_reveal_progress(pointer, Math.min(1, Math.max(0, progress)), 0);
+          }, 0, { kind: 'story', speaker });
+          options.onStory?.();
+        } catch { /* Preserve the native printer when a component is unavailable. */ }
+        return result;
+      },
+      scriptPrefetch(original, path, value, file, info) {
+        try {
+          const script = read(value, 1000000), lookahead = Math.min(10, Math.max(0, options.lookahead?.() ?? 3));
+          let count = 0;
+          // Warm plain script lines only; commands, variables and embedded events are untouched.
+          for (const row of script.split(/\r?\n/).slice(0, 20000)) {
+            const line = row.trim();
+            if (!line || /^[;@#]/.test(line) || /[{}\[\]]/.test(line)) continue;
+            const match = /^([^:\s]{1,80}):\s*(.*)$/.exec(line), name = match?.[1] || '', text = match?.[2] ?? line;
+            register(text, 'story', name); if (name) register(name, 'name', name);
+            if (count++ < lookahead) { remember(text, 'story', name); if (name) remember(name, 'name', name); }
+          }
+        } catch { /* Compiled or unavailable scripts need no prefetch. */ }
+        return original(path, value, file, info);
+      },
       glyphInitialize(original, pointer, letter, parent, active, info) {
         const mark = () => { try {
           const view = new DataView(memory.buffer);

@@ -10,6 +10,8 @@ Typewriter balloons bind their complete sentence at initialization. Per-frame pr
 
 Per-character dialogue binds the complete native window sentence. A translation refresh runs the original clear, parse and render path while suppressing that refresh's duplicate native log entry. The original sentence still records once. Window clear, disposal and script changes release bindings; pause restores the original sentence, and late results cannot update a newer sentence.
 
+Revealable text uses a separate verified hook plan. Whole renderer strings bind as dialogue, with author-name context. Translation refresh calls only the original renderer setter, forces the native mesh to refresh and restores normalized reveal progress. The application's source string, command execution, audio and backlog are not replayed. Native font metadata slots are selected per build fingerprint.
+
 `bridge.js` provides a same-window string CustomEvent transport to the service worker. Page operations are restricted to public preferences, translation, bundled font chunks and sanitized status reports. Pages cannot select profiles, write settings, read credentials, export caches or invoke updates. All service requests originate in the extension, with configured API origin permission checks and omitted cookies. Storage access is restricted to trusted extension contexts.
 
 `ProfileManager` separates shared providers/languages/switches from profile-specific rules and prompts. Each profile has a separate IndexedDB cache; keys include provider/body/prompt, target language and dialogue context. A bounded LRU avoids repeated IndexedDB access and SHA-256 work. Personal translations are kept separately and take priority.

@@ -21,8 +21,10 @@
       const roots = [];
       try {
         // This layout belongs to the fingerprint-gated 32-bit native adapter.
-        exports.__uwt_type(9899276);
-        const type = new DataView(memory.buffer).getUint32(9899276, true);
+        const typeAddress = options.byteArrayTypeAddress ?? 9899276;
+        if (!Number.isInteger(typeAddress) || typeAddress < 8 || typeAddress + 4 > memory.buffer.byteLength) throw new Error('Native byte array layout unavailable');
+        exports.__uwt_type(typeAddress);
+        const type = new DataView(memory.buffer).getUint32(typeAddress, true);
         if (!type) throw new Error('Native byte array type unavailable');
         const array = exports.__uwt_array(type, bytes.length);
         roots.push(exports.__uwt_root(array, 0, 2));

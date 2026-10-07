@@ -83,6 +83,17 @@ assert.equal(new DataView(memory.buffer).getInt32(list + 12, true), 1, 'Pause re
 active = true; fallback.synchronize(); assert.notEqual(new DataView(memory.buffer).getUint32(list + 8, true), items);
 fallback.forget(100); fallback.dispose(); assert.equal(roots.size, 0);
 assert.equal(new DataView(memory.buffer).getUint32(list + 8, true), items, 'Disposal restores the original array and releases every root');
+// A different verified build selects its own metadata slot instead of reusing the previous address.
+const secondAddress = 13964456;
+memory.grow(Math.ceil((secondAddress + 4) / 65536) - memory.buffer.byteLength / 65536);
+new DataView(memory.buffer).setUint32(secondAddress, 123, true);
+exports.__uwt_type = address => assert.equal(address, secondAddress);
+delete exports.__uwt_fallbacks;
+const secondFont = globalThis.__UnityNativeFont.create(exports, { byteArrayTypeAddress: secondAddress,
+  string(value) { const pointer = exports.malloc(value.length * 2 + 12); strings.set(pointer, value); return pointer; }, load: async () => data });
+await new Promise(resolve => setImmediate(resolve));
+secondFont.apply(100, '你好', { font: 42 }); assert.equal(currentFont, 999);
+secondFont.dispose(); assert.equal(roots.size, 0);
 const packed = await fs.readFile(new URL('../extension/fonts/cjk-fallback.ttf', import.meta.url));
 assert(packed.length < 12000000); assert.equal(packed.readUInt32BE(0), 0x10000);
 assert((await fs.readFile(new URL('../extension/fonts/OFL.txt', import.meta.url), 'utf8')).includes('SIL OPEN FONT LICENSE'));

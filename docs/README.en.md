@@ -12,6 +12,8 @@ The native component adapter leaves downloaded asset bundles and their checksums
 
 Supported native adapters bind complete typewriter sentences and include an OFL-licensed Chinese fallback font, rendered by Unity itself. Its BMP subset contains 30,445 characters; rare characters and non-BMP glyphs are not guaranteed. Pausing restores original text and fonts. Other integration paths retain the project's own font configuration. Font loading is local to the extension and engine memory.
 
+Verified component paths include per-character dialogue windows and Naninovel RevealableText / TextMeshPro. The revealable adapter captures complete dialogue and author names, preserves reveal progress during asynchronous updates, and does not replay script commands, voice playback or backlog insertion. Support remains limited to the verified build fingerprints.
+
 Download the extension ZIP from [Releases](https://github.com/HappyAny/unity-web-translator/releases/latest), extract it into a permanent directory, and load its `extension` folder with Developer mode enabled. Configure the shared provider and run the translation test. Create a profile; supported native builds need no JSON resource rules. Otherwise configure real [resource rules](native-adapters.md) or integrate the [Unity SDK](../examples/unity/). Select the profile in the page popup, grant access and refresh the page.
 
 Providers, API keys, body parameters, reasoning presets, target language and switches are shared. Profiles isolate resource rules, additional prompts, automatic caches and personal translations. Seven target languages and English / Chinese settings are included. Export editable cache JSON and import personal corrections; API keys are excluded.

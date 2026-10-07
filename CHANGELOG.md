@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.5
+
+- Add a second fingerprint-checked Unity native component adapter for Naninovel revealable text and TextMeshPro UI.
+- Translate complete dialogue and author names while retaining the original script, voice playback and backlog entries.
+- Preserve native reveal progress when an asynchronous translation refreshes the renderer; ignore stale responses after line changes or component disposal.
+- Select managed font layouts per verified build and reuse the bundled OFL-licensed Chinese fallback font.
+- Warm a bounded cache of plain script lines without changing commands or expressions.
+- Retain existing adapter behavior, shared services, per-profile settings and same-directory updates.
+
 ## 0.2.4
 
 - Add a fingerprint-checked IL2CPP WebAssembly component adapter for verified builds.
