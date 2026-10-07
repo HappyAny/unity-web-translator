@@ -100,7 +100,9 @@ let legacyFont = 42, constructed = 0;
 exports.__uwt_type = address => assert([secondAddress, legacyAddress].includes(address));
 exports.__uwt_new_object = type => { assert.equal(type, 789); return 1002; };
 exports.__uwt_legacy_ctor = (value, path) => { assert.equal(value, 1002); assert.equal(strings.get(path), '/tmp/unity-translator-cjk.ttf'); constructed++; };
-exports.__uwt_legacy_has_char = (value, code) => { assert.equal(value, 1002); assert.equal(code, 0x8bd1); return 1; };
+exports.__uwt_legacy_has_char = (value, code) => { if (value === 42) return 0; assert.equal(value, 1002); assert.equal(code, 0x8bd1); return 1; };
+exports.__uwt_legacy_dynamic = value => { assert.equal(value, 1002); return 1; };
+exports.__uwt_legacy_request_chars = (value, text, size, style) => { assert.equal(value, 1002); assert.equal(strings.get(text), '译'); assert.equal(size, 48); assert.equal(style, 0); };
 exports.__uwt_legacy_font = () => legacyFont;
 exports.__uwt_legacy_set_font = (_pointer, value) => { legacyFont = value; };
 const legacy = globalThis.__UnityNativeFont.create(exports, { byteArrayTypeAddress: secondAddress, legacyTypeAddress: legacyAddress,
@@ -117,6 +119,11 @@ active = true; legacy.applyLegacy(200, '请按指示行动', legacyStyle); asser
 legacy.forgetLegacy(200); assert.equal(legacyFont, 42);
 legacy.restoreLegacy(200, { font: 0 }); assert.equal(legacyFont, 0, 'An originally empty font also restores');
 legacy.dispose(); assert.equal(roots.size, 0);
+legacyFont = 42; exports.__uwt_legacy_has_char = value => { assert.equal(value, 42); return 1; };
+const covered = globalThis.__UnityNativeFont.create(exports, { byteArrayTypeAddress: secondAddress, legacyTypeAddress: legacyAddress,
+  string(value) { const pointer = exports.malloc(value.length * 2 + 12); strings.set(pointer, value); return pointer; }, load: async () => data });
+covered.applyLegacy(300, '菜单设置', { font: 42 }); assert.equal(legacyFont, 42); assert.equal(constructed, 1, 'A complete original font needs no replacement');
+covered.dispose(); assert.equal(roots.size, 0);
 const packed = await fs.readFile(new URL('../extension/fonts/cjk-fallback.ttf', import.meta.url));
 assert(packed.length < 12000000); assert.equal(packed.readUInt32BE(0), 0x10000);
 assert((await fs.readFile(new URL('../extension/fonts/OFL.txt', import.meta.url), 'utf8')).includes('SIL OPEN FONT LICENSE'));

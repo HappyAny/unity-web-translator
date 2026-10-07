@@ -47,6 +47,7 @@
       __uwt_fallbacks: 31253, __uwt_clear_fallbacks: 33634, __uwt_dirty: 34841,
       __uwt_reveal_progress: 139989, __uwt_set_reveal_progress: 139990, __uwt_mesh: 33191,
       __uwt_new_object: 1417, __uwt_legacy_ctor: 33323, __uwt_legacy_has_char: 33333,
+      __uwt_legacy_request_chars: 33344, __uwt_legacy_dynamic: 33253,
       __uwt_legacy_font: 139207, __uwt_legacy_set_font: 139209, __uwt_legacy_text: 25118 },
   }];
   function create(exports, options) {

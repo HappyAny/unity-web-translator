@@ -151,23 +151,33 @@
     function legacyInitialize() {
       if (!legacyAvailable || legacyFailed || disposed || !initialize()) return 0;
       if (legacyAsset) return legacyAsset;
-      const address = options.legacyTypeAddress, roots = [];
+      const address = options.legacyTypeAddress, roots = []; let phase = 'type', dynamic = false;
       try {
         if (!Number.isInteger(address) || address < 8 || address + 4 > memory.buffer.byteLength) throw new Error('Legacy font layout unavailable');
         exports.__uwt_type(address);
         const type = new DataView(memory.buffer).getUint32(address, true);
         if (!type) throw new Error('Legacy font type unavailable');
+        phase = 'object';
         const value = exports.__uwt_new_object(type);
         roots.push(exports.__uwt_root(value, 0, 2));
         const path = options.string('/tmp/unity-translator-cjk.ttf');
         roots.push(exports.__uwt_root(path, 0, 2));
         if (!value || roots.some(root => !root)) throw new Error('Legacy font root unavailable');
+        phase = 'constructor';
         exports.__uwt_legacy_ctor(value, path, 0);
+        dynamic = !!exports.__uwt_legacy_dynamic?.(value, 0);
+        phase = 'request';
+        if (typeof exports.__uwt_legacy_request_chars === 'function') {
+          const probe = options.string('译'); roots.push(exports.__uwt_root(probe, 0, 2));
+          if (!roots.at(-1)) throw new Error('Legacy glyph root unavailable');
+          exports.__uwt_legacy_request_chars(value, probe, 48, 0, 0);
+        }
+        phase = 'glyph';
         if (!exports.__uwt_legacy_has_char(value, 0x8bd1, 0)) throw new Error('Legacy font glyphs unavailable');
         legacyAsset = value; legacyHandle = roots.shift();
         console.info('[Unity Web Translator] legacyFont=ready');
       } catch {
-        legacyFailed = true; console.warn('[Unity Web Translator] legacyFont=failed');
+        legacyFailed = true; console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic);
       } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
       return legacyAsset;
     }
@@ -193,6 +203,16 @@
     function applyLegacy(pointer, text, state) {
       observeLegacy(pointer, text);
       const entry = legacyObserved.get(pointer); if (entry) entry.applied = true;
+      // Preserve an existing font when it already covers the translated characters.
+      if (state?.font && legacyAvailable) {
+        if (entry?.coverage?.text !== text) {
+          let complete = true;
+          try { for (const char of new Set(text.replace(/<[^>]*>/g, ''))) if (char.codePointAt(0) >= 32 && !exports.__uwt_legacy_has_char(state.font, char.codePointAt(0), 0)) { complete = false; break; } }
+          catch { complete = false; }
+          if (entry) entry.coverage = { text, complete };
+        }
+        if (entry?.coverage?.complete) { if (exports.__uwt_legacy_font(pointer, 0) !== state.font) restoreLegacy(pointer, state); entry.applied = false; return; }
+      }
       if (legacyInitialize()) exports.__uwt_legacy_set_font(pointer, legacyAsset, 0);
     }
     function forgetLegacy(pointer) {
