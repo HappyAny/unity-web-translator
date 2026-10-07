@@ -1,0 +1,15 @@
+node_modules/
+.npm-cache/
+dist/
+.test-output/
+*.zip
+*.sqlite*
+*.db
+settings.json
+update-target.json
+.unity-update-backups/
+.env
+.env.*
+__pycache__/
+.DS_Store
+Thumbs.db

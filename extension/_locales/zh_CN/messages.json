@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "Unity Web翻译机"
+  },
+  "extensionDescription": {
+    "message": "通过配置的 JSON 文本资源或已接入的文本桥翻译 Unity Web 原生文字。"
+  }
+}

@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { IDBFactory } from 'fake-indexeddb';
+import { createCache, validateTranslationFile } from '../extension/cache.mjs';
+const indexedDB = new IDBFactory();
+const old = await new Promise((resolve, reject) => {
+  const request = indexedDB.open('legacy-translations', 2);
+  request.onupgradeneeded = () => { request.result.createObjectStore('translations'); request.result.createObjectStore('overrides'); };
+  request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+});
+await new Promise((resolve, reject) => {
+  const tx = old.transaction(['translations', 'overrides'], 'readwrite');
+  tx.objectStore('translations').put('旧缓存', 'old-hash');
+  tx.objectStore('overrides').put({ original: '設定', translation: '偏好设置', targetLanguage: 'zh-CN' }, '設定');
+  tx.objectStore('overrides').put({ original: '設定', translation: 'My settings', targetLanguage: 'en' }, 'en\0設定');
+  tx.oncomplete = resolve; tx.onerror = () => reject(tx.error);
+});
+old.close();
+const cache = createCache(indexedDB);
+assert.equal(await cache.get('old-hash', 'テスト'), '旧缓存');
+assert.equal(await cache.getOverride('設定'), '偏好设置'); assert.equal(await cache.getOverride('設定', 'en'), 'My settings');
+assert.equal(await cache.getOverride('設定', 'fr'), undefined);
+await cache.importFile({ format: 'legacy-translations', version: 1, translations: { '設定': '新版修订' } });
+assert.equal(await cache.getOverride('設定'), '新版修订');
+const reload = createCache(indexedDB); assert.equal(await reload.getOverride('設定'), '新版修订');
+const english = await reload.exportFile('en'); assert.equal(english.format, 'unity-translations'); assert.equal(english.translations['設定'], 'My settings'); assert(!Object.hasOwn(english.translations, 'テスト'));
+await assert.rejects(reload.importFile({ format: 'unity-translations', version: 1, translations: { '設定': '不应保存', '<b>メニュー</b>': '<i>错误标签</i>' } }));
+assert.equal(await reload.getOverride('設定'), '新版修订');
+await reload.clear(); assert.equal((await reload.stats()).automatic, 0); assert.equal(await reload.getOverride('設定'), '新版修订'); assert.equal(await reload.getOverride('設定', 'en'), 'My settings');
+assert.equal((await createCache(indexedDB).stats()).automatic, 0);
+await reload.removeOverride('設定', 'en'); assert.equal(await reload.getOverride('設定', 'en'), undefined); assert.equal(await reload.getOverride('設定'), '新版修订');
+assert.throws(() => validateTranslationFile({ format: 'unrelated', version: 1, translations: { '設定': '设置' } }));
+assert((await indexedDB.databases()).some(info => info.name === 'legacy-translations'));
+console.log('IndexedDB: older cache migration, restart, language isolation, compatible import, atomic validation, export, and personal edit retention checks passed.');

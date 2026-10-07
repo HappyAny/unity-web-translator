@@ -1,0 +1,103 @@
+import assert from 'node:assert/strict';
+import { IDBFactory } from 'fake-indexeddb';
+import { ProfileManager, pageScope } from '../extension/profiles.mjs';
+import { createCache } from '../extension/cache.mjs';
+import { DEFAULTS, validateSettings, providerIdentity, stableJson, buildModelBody } from '../extension/core.mjs';
+import { digest } from '../extension/engine.mjs';
+import { area } from './fixtures/chrome.mjs';
+const storage = { local: area({ settings: { ...DEFAULTS, provider: 'openai', model: 'legacy-model', apiBase: 'https://api.example.test/v1' }, revision: 12 }), session: area({ apiKey: 'TEST_ONLY_NOT_SECRET' }) };
+const indexedDB = new IDBFactory(), calls = [];
+const deps = { storage, indexedDB, glossary: { 'メニュー': '菜单' }, permitted: async () => true,
+  fetchImpl: async (_url, options) => { calls.push(options); return { ok: true, json: async () => ({ choices: [{ message: { content: '译文' + calls.length } }] }) }; } };
+const manager = new ProfileManager(deps); await manager.ready;
+assert.equal((await manager.list()).profiles.length, 1); assert.equal(manager.registry.revision, 12);
+const legacy = await manager.get('default'), text = 'これは保存済みです。';
+const key = await digest(stableJson([...providerIdentity(legacy.settings), 'ja', 'zh-CN', text]));
+await createCache(indexedDB).put(key, '原来的译文', text);
+assert.equal((await legacy.translate([{ id: 'old', text }])).items[0].text, '原来的译文'); assert.equal(calls.length, 0);
+assert(legacy.apiKey); assert(!JSON.stringify(await manager.view('default')).includes('TEST_ONLY_NOT_SECRET'));
+assert.equal(await manager.binding('https://canvas.example.test/one?token=PRIVATE#scene'), null);
+const untouched = await manager.view(null); assert(untouched.profileRequired && !untouched.storyEnabled && !untouched.uiEnabled);
+assert.equal(pageScope('https://canvas.example.test/one?token=PRIVATE#scene'), 'https://canvas.example.test/one');
+
+const a = await manager.create({ name: 'Adventure', copyFrom: 'default' }), b = await manager.create({ name: 'Strategy', copyFrom: 'default' });
+assert.equal(a.model, 'legacy-model'); assert(a.hasApiKey && !a.rememberApiKey); assert.equal((await manager.get(a.profileId)).apiKey, 'TEST_ONLY_NOT_SECRET');
+assert.deepEqual(storage.local.data['profile:' + a.profileId].settings, { customPrompt: '', resourceRules: [] });
+assert(!Object.hasOwn(storage.local.data['profile:' + a.profileId], 'apiKey'));
+assert.equal(await manager.binding('https://canvas.example.test/new'), null, 'Creation and editing must not bind unknown pages');
+await manager.bind('https://canvas.example.test/one?token=PRIVATE', a.profileId); await manager.bind('https://canvas.example.test/two', b.profileId);
+assert.equal((await manager.binding('https://canvas.example.test/one?different=1')).id, a.profileId);
+assert.equal((await manager.binding('https://canvas.example.test/two')).id, b.profileId);
+assert.equal(await manager.binding('https://canvas.example.test/three'), null);
+assert(!JSON.stringify(storage.local.data.translationProfiles).includes('PRIVATE'));
+await manager.selectEditor('default'); assert.equal((await manager.binding('https://canvas.example.test/one')).id, a.profileId);
+
+const first = await manager.get(a.profileId), second = await manager.get(b.profileId), same = [{ id: 'same', text: 'これは同じ文章です。' }];
+const firstText = (await first.translate(same)).items[0].text, secondText = (await second.translate(same)).items[0].text;
+assert.notEqual(firstText, secondText); assert.equal(calls.length, 2);
+assert.equal((await first.translate(same)).items[0].text, firstText); assert.equal((await second.translate(same)).items[0].text, secondText); assert.equal(calls.length, 2);
+await first.cache.importFile({ format: 'unity-translations', version: 1, translations: { 'メニュー': '冒险菜单', [same[0].text]: '个人译文' } });
+assert.equal((await first.translate(same)).items[0].text, '个人译文'); assert.equal((await second.translate(same)).items[0].text, secondText);
+assert.equal((await first.translate([{ id: 'menu', text: 'メニュー' }])).items[0].text, '冒险菜单');
+assert.equal((await second.translate([{ id: 'menu', text: 'メニュー' }])).items[0].text, '菜单');
+await second.cache.importFile({ format: 'unity-translations', version: 1, targetLanguage: 'en', translations: { 'メニュー': 'Strategy menu' } });
+assert.equal(await second.cache.getOverride('メニュー'), undefined); assert.equal(await second.cache.getOverride('メニュー', 'en'), 'Strategy menu');
+await first.cache.clear(); assert.equal(await first.cache.getOverride(same[0].text), '个人译文'); assert((await second.cache.stats()).automatic > 0);
+const exportA = await first.cache.exportFile(), exportB = await second.cache.exportFile();
+assert.equal(exportA.translations['メニュー'], '冒险菜单'); assert(!Object.hasOwn(exportB.translations, 'メニュー'));
+
+await manager.configure(b.profileId, { customPrompt: 'Names: アリス = Alice. メニュー = Control room.' });
+const beforePrompt = calls.length;
+assert.equal((await second.translate([{ id: 'menu', text: 'メニュー' }])).items[0].text, '译文' + (beforePrompt + 1));
+assert(JSON.parse(calls.at(-1).body).messages[0].content.includes('Control room'));
+await second.translate(same); assert.equal(calls.length, beforePrompt + 2, 'Prompt changes must miss the previous automatic cache');
+await manager.configure(b.profileId, { customPrompt: 'Menu = Command center.' }); await second.translate(same); assert.equal(calls.length, beforePrompt + 3);
+assert(!JSON.stringify(await manager.view(b.profileId)).includes('Command center'));
+assert(buildModelBody(second.settings, 'テスト').messages[0].content.includes('Command center'));
+assert.throws(() => validateSettings({ ...DEFAULTS, customPrompt: 'x'.repeat(12001) }));
+
+await manager.configure(a.profileId, { paused: true }, true); assert((await manager.view(b.profileId)).paused && second.settings.paused);
+assert((await second.translate(same)).paused); await manager.configure(b.profileId, { paused: false }, true); assert(!first.settings.paused);
+await manager.configure(a.profileId, { interfaceLanguage: 'en', apiKey: 'PROFILE_A_TEST_KEY', rememberApiKey: true });
+assert.equal((await manager.view(b.profileId)).interfaceLanguage, 'en'); assert.equal(second.apiKey, 'PROFILE_A_TEST_KEY');
+assert.equal(storage.local.data.sharedTranslationApiKey, 'PROFILE_A_TEST_KEY');
+assert(!Object.hasOwn(storage.local.data['profile:' + a.profileId], 'apiKey'));
+assert(!JSON.stringify(await manager.list()).includes('PROFILE_A_TEST_KEY'));
+await manager.rename(a.profileId, 'New adventure'); assert.equal((await manager.list()).profiles.find(row => row.id === a.profileId).name, 'New adventure');
+await assert.rejects(manager.rename(a.profileId, 'Strategy'), /已存在/); await assert.rejects(manager.create({ name: 'Strategy' }), /已存在/);
+await assert.rejects(manager.get('foreign'), /有效/); await assert.rejects(manager.bind('https://canvas.example.test/one', 'foreign'), /有效/);
+await manager.bind('https://canvas.example.test/two', null); assert.equal(await manager.binding('https://canvas.example.test/two'), null);
+const reloaded = new ProfileManager(deps); await reloaded.ready;
+assert.equal((await reloaded.binding('https://canvas.example.test/one')).id, a.profileId);
+assert.equal((await reloaded.get(a.profileId)).apiKey, 'PROFILE_A_TEST_KEY');
+assert.equal((await reloaded.get(a.profileId)).settings.interfaceLanguage, 'en');
+assert.equal((await reloaded.get(a.profileId)).cache && await (await reloaded.get(a.profileId)).cache.getOverride(same[0].text), '个人译文');
+
+await manager.bind('https://canvas.example.test/race', a.profileId);
+const originalPublicSettings = first.publicSettings; let snapshotReady;
+first.publicSettings = async function (full) { const snapshot = await originalPublicSettings.call(this, full); return new Promise(resolve => { snapshotReady = () => resolve(snapshot); }); };
+const earlier = manager.pageView('https://canvas.example.test/race');
+for (let i = 0; !snapshotReady && i < 50; i++) await new Promise(resolve => setImmediate(resolve)); assert(snapshotReady);
+const later = await manager.bind('https://canvas.example.test/race', b.profileId);
+snapshotReady(); const outdated = await earlier; first.publicSettings = originalPublicSettings;
+assert.equal(outdated.profileId, a.profileId); assert(outdated.revision < later.revision, 'A slow preference read must not claim the revision of a newer binding');
+
+const nativeRules = [{ url: '/story/*.json', fields: [{ path: 'lines[*].text', kind: 'story', speaker: 'speaker' }] }];
+await manager.configure(a.profileId, { resourceRules: nativeRules });
+assert.deepEqual((await manager.view(a.profileId)).resourceRules, nativeRules);
+assert.deepEqual((await manager.view(b.profileId)).resourceRules, []);
+assert(!Object.hasOwn(await manager.sharedView(true), 'resourceRules'));
+const copiedRules = await manager.create({ name: 'Copied rules', copyFrom: a.profileId }); assert.deepEqual(copiedRules.resourceRules, nativeRules);
+const rulesReloaded = new ProfileManager(deps); await rulesReloaded.ready; assert.deepEqual((await rulesReloaded.get(a.profileId)).settings.resourceRules, nativeRules);
+
+let date = '2026-10-07', active = 0, peak = 0, freeCalls = 0;
+const budgetStorage = { local: area(), session: area() };
+const budget = new ProfileManager({ storage: budgetStorage, indexedDB: new IDBFactory(), glossary: {}, date: () => date,
+  fetchImpl: async () => { active++; peak = Math.max(peak, active); freeCalls++; await new Promise(resolve => setTimeout(resolve, 5)); active--; return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: '译文' } }) }; } });
+const one = await budget.create({ name: 'One' }), two = await budget.create({ name: 'Two' });
+await budget.configure(one.profileId, { maxFreeCharacters: 6 }); await budget.configure(two.profileId, { maxFreeCharacters: 6 });
+const batches = await Promise.all([one, two].map(async row => (await budget.get(row.profileId)).translate([{ id: '1', text: 'ああ' }, { id: '2', text: 'いい' }])));
+assert.equal(freeCalls, 3); assert.equal(peak, 2); assert.equal(batches.flatMap(batch => batch.items).filter(item => item.error === 'BudgetExceeded').length, 1);
+assert.equal((await budget.view(one.profileId)).usedFreeCharacters, 6); assert.equal((await budget.view(two.profileId)).usedFreeCharacters, 6);
+date = '2026-10-08'; assert.equal((await budget.view(one.profileId)).usedFreeCharacters, 0);
+console.log('Profiles: shared service/key/language migration, independent caches/edits/prompts, bindings, unbound pages, restart, global pause, shared budget and concurrency passed.');

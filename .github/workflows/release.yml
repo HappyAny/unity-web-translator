@@ -1,0 +1,25 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Publish extension package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" || gh release create "$GITHUB_REF_NAME" --verify-tag --title "Unity Web Translator $GITHUB_REF_NAME" --notes "Install the packaged browser extension ZIP. See README for installation and updates."
+          gh release upload "$GITHUB_REF_NAME" dist/*.zip dist/unity-web-translator-updater.html dist/SHA256SUMS.txt dist/release-manifest.json --clobber

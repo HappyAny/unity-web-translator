@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title data-i18n="updateTitle">Unity Web翻译机 · 更新</title><link rel="stylesheet" href="update.css"></head><body>
+<main><header><div><p class="eyebrow">UNITY WEB TRANSLATOR</p><h1 data-i18n="updateTitle">Unity Web翻译机 · 更新</h1></div><select id="language" aria-label="Language"><option value="zh-CN">简体中文</option><option value="en">English</option></select></header>
+<p class="intro" data-i18n="updateIntro">把新版 ZIP 拖进来，更新原来的扩展目录。设置、已保存的密钥、缓存和个人译文继续保留。</p>
+<div class="summary" id="runningVersionRow" hidden><span data-i18n="runningVersion">当前运行版本</span><strong id="runningVersion">—</strong></div>
+<section id="dropZone" tabindex="0" role="button" data-i18n-label="chooseUpdateZip"><strong data-i18n="dropUpdateZip">拖入插件 Release ZIP</strong><span data-i18n="orChooseZip">或点击选择 ZIP，不需要解压</span><input type="file" id="packageFile" accept=".zip,application/zip" hidden></section>
+<div class="summary"><span data-i18n="packageVersion">更新包</span><strong id="packageVersion">—</strong></div>
+<section class="directory"><h2 data-i18n="originalDirectory">原扩展目录</h2><p data-i18n="directoryHint">首次选择已经加载到浏览器的 extension 文件夹，以后会记住。请保留原插件。</p><button id="chooseDirectory" class="secondary" data-i18n="chooseOriginalDirectory">选择原扩展目录</button><p id="directoryName" class="hint" data-i18n="directoryNotSelected">尚未选择目录</p></section>
+<button id="applyUpdate" disabled data-i18n="applyUpdate">更新原插件</button><progress id="progress" value="0" max="1" hidden></progress><p id="updateStatus" role="status" aria-live="polite"></p>
+<button id="reloadUpdated" hidden data-i18n="reloadUpdated">重新加载已更新的插件</button>
+<p class="hint" data-i18n="updateBackupHint">更新前备份原代码；校验失败不会写入文件，写入失败会还原。仅使用本项目 Releases 提供的 ZIP。</p>
+<footer><a href="https://github.com/HappyAny/unity-web-translator/releases/latest" target="_blank" rel="noreferrer" data-i18n="downloadLatest">下载最新版</a><span>GPL-3.0-only · Copyright (C) 2026 HappyAny</span></footer>
+</main><script type="module" src="update.mjs"></script></body></html>

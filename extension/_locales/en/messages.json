@@ -1,0 +1,8 @@
+{
+  "extensionName": {
+    "message": "Unity Web Translator"
+  },
+  "extensionDescription": {
+    "message": "Translate native Unity Web text through configured JSON resources or an integrated text bridge."
+  }
+}
