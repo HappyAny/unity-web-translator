@@ -26,12 +26,17 @@
   }, {
     sha256: 'bd48af8399673bb377a0c4274432f53c0790b006050a2ecd50c8f9c72af6f406',
     importedFunctions: 701,
-    font: { byteArrayTypeAddress: 13964456 },
+    font: { byteArrayTypeAddress: 13964456, legacyTypeAddress: 13974152 },
     hooks: [
       { name: 'labelSet', function: 34714 }, { name: 'labelEnable', function: 33200 },
       { name: 'labelDisable', function: 33202 }, { name: 'labelDestroy', function: 33203 },
       { name: 'revealText', function: 139786 }, { name: 'nameSet', function: 139902 },
       { name: 'scriptPrefetch', function: 54652 },
+      { name: 'labelProcessing', function: 34886 },
+      { name: 'meshEnable', function: 33134 }, { name: 'meshDisable', function: 33135 },
+      { name: 'meshDestroy', function: 33136 },
+      { name: 'legacySet', function: 139210 }, { name: 'legacyEnable', function: 139234 },
+      { name: 'legacyDisable', function: 139235 }, { name: 'legacyDestroy', function: 92525 },
     ],
     exports: { __uwt_string: 198601, __uwt_label_text: 34712, __uwt_root: 220084, __uwt_unroot: 220070,
       __uwt_type: 2388, __uwt_array: 2032, __uwt_write_file: 181784, __uwt_create_font: 33612,
@@ -40,7 +45,9 @@
       __uwt_color: 34724, __uwt_set_color: 34725, __uwt_property: 156346,
       __uwt_has_property: 156764, __uwt_material_color: 156746,
       __uwt_fallbacks: 31253, __uwt_clear_fallbacks: 33634, __uwt_dirty: 34841,
-      __uwt_reveal_progress: 139989, __uwt_set_reveal_progress: 139990, __uwt_mesh: 33191 },
+      __uwt_reveal_progress: 139989, __uwt_set_reveal_progress: 139990, __uwt_mesh: 33191,
+      __uwt_new_object: 1417, __uwt_legacy_ctor: 33323, __uwt_legacy_has_char: 33333,
+      __uwt_legacy_font: 139207, __uwt_legacy_set_font: 139209, __uwt_legacy_text: 25118 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
@@ -79,7 +86,7 @@
     function drop(pointer) {
       const slot = slots.get(pointer); if (!slot) return;
       slots.delete(pointer); balloons.delete(pointer); slot.release?.();
-      if (slot.fontState) try { font?.restore(pointer, slot.fontState); } catch { /* Component may already be disposing. */ }
+      if (slot.fontState) try { if (slot.legacy) font?.restoreLegacy(pointer, slot.fontState); else font?.restore(pointer, slot.fontState); } catch { /* Component may already be disposing. */ }
       for (const handle of slot.roots) if (handle) exports.__uwt_unroot(handle);
     }
     function dropWindow(pointer) {
@@ -93,7 +100,7 @@
       if (!sources.has(normalized) && sources.size >= 4096) sources.delete(sources.keys().next().value);
       sources.set(normalized, { kind, speaker: name });
     }
-    function bind(pointer, value, original, owner = 0, knownContext) {
+    function bind(pointer, value, original, owner = 0, knownContext, legacy = false) {
       if (disposed || busy) return;
       if (glyphs.has(pointer)) return;
       if (!options.active()) { drop(pointer); return; }
@@ -109,11 +116,11 @@
       try {
         roots.push(exports.__uwt_root(pointer, 0, 2), exports.__uwt_root(value, 0, 2));
         if (owner) roots.push(exports.__uwt_root(owner, 0, 2));
-        const fontState = font?.snapshot(pointer), originalFont = fontState?.font || 0;
+        const fontState = legacy ? font?.snapshotLegacy(pointer) : font?.snapshot(pointer), originalFont = fontState?.font || 0;
         if (originalFont) roots.push(exports.__uwt_root(originalFont, 0, 2));
         if (fontState?.material) roots.push(exports.__uwt_root(fontState.material, 0, 2));
         if (roots.some(handle => !handle)) throw new Error('Native root unavailable');
-        const slot = { text, roots, fontState, output: text, release: null }; slots.set(pointer, slot);
+        const slot = { text, roots, fontState, legacy, output: text, release: null }; slots.set(pointer, slot);
         slot.apply = output => {
           if (slots.get(pointer) !== slot || disposed) return;
           busy = true;
@@ -123,7 +130,8 @@
             const next = output === text ? value : string(output);
             if (output !== text) { temporary = exports.__uwt_root(next, 0, 2); if (!temporary) return; }
             original(pointer, next, 0);
-            if (output === text) font?.restore(pointer, fontState); else font?.apply(pointer, output, fontState);
+            if (legacy) { if (output === text) font?.restoreLegacy(pointer, fontState); else font?.applyLegacy(pointer, output, fontState); }
+            else { if (output === text) font?.restore(pointer, fontState); else font?.apply(pointer, output, fontState); }
           }
           finally { if (temporary) exports.__uwt_unroot(temporary); busy = false; }
         };
@@ -170,6 +178,29 @@
         try { bind(pointer, value, original); } catch { /* Preserve the native setter's result. */ }
         return result;
       },
+      labelProcessing(original, pointer, info) {
+        const result = original(pointer, info);
+        if (busy || disposed || revealable.has(pointer)) return result;
+        try {
+          const value = exports.__uwt_label_text(pointer, 0), text = read(value);
+          if (slots.get(pointer)?.output === text) return result;
+          font?.observe(pointer, text);
+          bind(pointer, value, exports.__uwt_original_labelSet);
+        } catch { /* Numeric formatting and array-based text keep their native result. */ }
+        return result;
+      },
+      legacySet(original, pointer, value, info) {
+        const result = original(pointer, value, info);
+        try { font?.observeLegacy(pointer, read(value)); bind(pointer, value, original, 0, undefined, true); } catch { /* Preserve legacy text if unavailable. */ }
+        return result;
+      },
+      legacyEnable(original, pointer, info) {
+        const result = original(pointer, info);
+        try { const value = exports.__uwt_legacy_text(pointer, 0); font?.observeLegacy(pointer, read(value)); bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true); } catch { /* Serialized text may not be initialized. */ }
+        return result;
+      },
+      legacyDisable(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
+      legacyDestroy(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Other graphic components are unaffected. */ } return original(pointer, info); },
       labelEnable(original, pointer, info) {
         const result = original(pointer, info);
         try { font?.observe(pointer, read(exports.__uwt_label_text(pointer, 0))); } catch { /* Component not ready. */ }
@@ -301,6 +332,7 @@
         return original(pointer, value, info);
       },
     };
+    handlers.meshEnable = handlers.labelEnable; handlers.meshDisable = handlers.labelDisable; handlers.meshDestroy = handlers.labelDestroy;
     return { handlers, reset, invalidate: () => { translated.clear(); font?.synchronize(); }, dispose: () => { reset(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size }) };
   }
   root.__UnityNativeLabels = Object.freeze({ builds, create });

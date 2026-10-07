@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.6
+
+- Add fingerprint-checked legacy Unity UI.Text bindings for tutorials, menus and status labels.
+- Load the bundled Chinese font through the native Font file-path constructor for legacy UI; keep font size, style and color, and restore the original font on pause or disposal.
+- Capture the shared TextMeshPro text-processing path, including direct SetText, formatted values, StringBuilder and character-array input.
+- Include world-space TextMeshPro component lifecycle hooks and reject stale UI translations after label changes.
+- Retain the verified dialogue renderer and isolate legacy/TMP font helpers.
+
 ## 0.2.5
 
 - Add a second fingerprint-checked Unity native component adapter for Naninovel revealable text and TextMeshPro UI.

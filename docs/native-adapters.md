@@ -10,6 +10,8 @@
 
 Naninovel RevealableText 在完整渲染字符串赋值时绑定对白，角色名提供历史参考中的说话人。异步译文只刷新文本渲染层，并按新字数恢复原来的显示进度；原始剧情、配音控制和历史记录保持由应用处理。脚本预读仅处理有界的普通文本行，跳过指令和表达式；已编译脚本仍在实际显示时翻译。
 
+界面适配还覆盖已核对构建的旧版 `UnityEngine.UI.Text`、TextMeshPro 的公共文字处理入口，以及场景中的 TextMeshPro 生命周期。后者可以读取直接 `SetText`、格式化数值、StringBuilder 和字符数组生成的完整文本。旧版 UI.Text 通过原生 `Font` 的文件路径构造函数加载同一份内置字体，独立保留字号、样式与颜色；两类组件不会混用字体函数。字体构造入口依据[Unity 官方参考源码](https://github.com/Unity-Technologies/UnityCsReference/blob/master/Modules/TextRendering/TextRendering.bindings.cs)，并核对实际模块的函数签名。
+
 剧情脚本预读用于准备缓存；显示顺序和历史参考仍以实际文字绑定为准。资源包、目录和网络校验值保持原样。尚未匹配的 Unity 版本、其他文字组件和图片文字仍需要适配。
 
 内置组件适配器随扩展加载 OFL 1.1 许可的中文字体，不联网下载。字体只写入当前引擎的内存文件系统，使用原生 TextMeshPro 动态图集渲染译文；暂停、恢复原文或释放绑定时恢复原字体。覆盖基本多文种平面内的 30,445 个字符；字形覆盖和实际排版仍需要按画面验证。其他接入路径不自动替换字体。详见[字体来源和许可](../extension/fonts/README.md)。

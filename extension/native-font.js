@@ -3,8 +3,8 @@
   'use strict';
   if (root.__UnityNativeFont) return;
   function create(exports, options) {
-    let bytes, asset = 0, handle = 0, disposed = false, failed = false;
-    const seen = new Set(), observed = new Map(), fallbacks = new Map(), memory = exports.memory;
+    let bytes, asset = 0, handle = 0, legacyAsset = 0, legacyHandle = 0, legacyFailed = false, disposed = false, failed = false;
+    const seen = new Set(), observed = new Map(), legacyObserved = new Map(), fallbacks = new Map(), memory = exports.memory;
     let faceProperty;
     const available = ['__uwt_type', '__uwt_array', '__uwt_write_file', '__uwt_create_font', '__uwt_font', '__uwt_set_font', '__uwt_add_chars'].every(name => typeof exports[name] === 'function');
     if (!available || typeof options.load !== 'function') return null;
@@ -147,6 +147,60 @@
         if (state?.material) exports.__uwt_set_material(pointer, state.material, 0);
         if (state?.color) setColor(pointer, state.color);
     }
+    const legacyAvailable = ['__uwt_new_object', '__uwt_legacy_ctor', '__uwt_legacy_has_char', '__uwt_legacy_font', '__uwt_legacy_set_font'].every(name => typeof exports[name] === 'function');
+    function legacyInitialize() {
+      if (!legacyAvailable || legacyFailed || disposed || !initialize()) return 0;
+      if (legacyAsset) return legacyAsset;
+      const address = options.legacyTypeAddress, roots = [];
+      try {
+        if (!Number.isInteger(address) || address < 8 || address + 4 > memory.buffer.byteLength) throw new Error('Legacy font layout unavailable');
+        exports.__uwt_type(address);
+        const type = new DataView(memory.buffer).getUint32(address, true);
+        if (!type) throw new Error('Legacy font type unavailable');
+        const value = exports.__uwt_new_object(type);
+        roots.push(exports.__uwt_root(value, 0, 2));
+        const path = options.string('/tmp/unity-translator-cjk.ttf');
+        roots.push(exports.__uwt_root(path, 0, 2));
+        if (!value || roots.some(root => !root)) throw new Error('Legacy font root unavailable');
+        exports.__uwt_legacy_ctor(value, path, 0);
+        if (!exports.__uwt_legacy_has_char(value, 0x8bd1, 0)) throw new Error('Legacy font glyphs unavailable');
+        legacyAsset = value; legacyHandle = roots.shift();
+        console.info('[Unity Web Translator] legacyFont=ready');
+      } catch {
+        legacyFailed = true; console.warn('[Unity Web Translator] legacyFont=failed');
+      } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
+      return legacyAsset;
+    }
+    function snapshotLegacy(pointer) { return legacyObserved.get(pointer)?.state || { font: exports.__uwt_legacy_font(pointer, 0) }; }
+    function restoreLegacy(pointer, state) {
+      if (Number.isInteger(state?.font)) exports.__uwt_legacy_set_font(pointer, state.font, 0);
+      const entry = legacyObserved.get(pointer); if (entry) entry.applied = false;
+    }
+    function observeLegacy(pointer, text) {
+      if (!legacyAvailable || disposed || options.active?.() === false || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) return;
+      let entry = legacyObserved.get(pointer);
+      if (!entry) {
+        if (legacyObserved.size >= 256) return;
+        const state = snapshotLegacy(pointer), roots = [];
+        try {
+          for (const value of [pointer, state.font].filter(Boolean)) roots.push(exports.__uwt_root(value, 0, 2));
+          if (roots.some(root => !root)) throw new Error('Legacy label root unavailable');
+          entry = { state, roots, text, applied: false }; legacyObserved.set(pointer, entry);
+        } catch { for (const root of roots) if (root) exports.__uwt_unroot(root); return; }
+      }
+      entry.text = text;
+    }
+    function applyLegacy(pointer, text, state) {
+      observeLegacy(pointer, text);
+      const entry = legacyObserved.get(pointer); if (entry) entry.applied = true;
+      if (legacyInitialize()) exports.__uwt_legacy_set_font(pointer, legacyAsset, 0);
+    }
+    function forgetLegacy(pointer) {
+      const entry = legacyObserved.get(pointer); if (!entry) return;
+      legacyObserved.delete(pointer);
+      try { restoreLegacy(pointer, entry.state); } catch { /* Component may already be disposing. */ }
+      for (const root of entry.roots) if (root) exports.__uwt_unroot(root);
+    }
     function observe(pointer, text) {
       if (disposed || options.active?.() === false || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) return;
       let entry = observed.get(pointer);
@@ -172,14 +226,17 @@
     function refresh() {
       if (disposed || options.active?.() === false) return;
       for (const [pointer, entry] of observed) try { apply(pointer, entry.text, entry.state); } catch { /* One label cannot stop other labels. */ }
+      for (const [pointer, entry] of legacyObserved) if (entry.applied) try { applyLegacy(pointer, entry.text, entry.state); } catch { /* Legacy labels remain independent. */ }
     }
     function synchronize() {
       if (options.active?.() !== false) { refresh(); return; }
       for (const [pointer, entry] of observed) try { restore(pointer, entry.state); exports.__uwt_dirty?.(pointer, 1, 0); } catch { /* Native components own their cleanup. */ }
+      for (const [pointer, entry] of legacyObserved) try { restoreLegacy(pointer, entry.state); } catch { /* Preserve native legacy cleanup. */ }
       restoreFallbacks();
     }
     return { apply, snapshot, observe, forget, synchronize, original: pointer => exports.__uwt_font(pointer, 0), restore,
-      dispose: () => { for (const pointer of [...observed.keys()]) forget(pointer); restoreFallbacks(); disposed = true; bytes = null; if (handle) { exports.__uwt_unroot(handle); handle = 0; } } };
+      applyLegacy, snapshotLegacy, observeLegacy, restoreLegacy, forgetLegacy,
+      dispose: () => { for (const pointer of [...observed.keys()]) forget(pointer); for (const pointer of [...legacyObserved.keys()]) forgetLegacy(pointer); restoreFallbacks(); disposed = true; bytes = null; if (handle) { exports.__uwt_unroot(handle); handle = 0; } if (legacyHandle) { exports.__uwt_unroot(legacyHandle); legacyHandle = 0; } } };
   }
   root.__UnityNativeFont = Object.freeze({ create });
 })(globalThis);

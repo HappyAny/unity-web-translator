@@ -8,7 +8,7 @@
   const pending = new Map(), held = new Set(), bindings = new Map();
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.5', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.6', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
@@ -227,6 +227,7 @@
       },
       onStatus: value => {
         stats.wasmStatus = value; console.info('[Unity Web Translator] native=' + value);
+        console.info('[Unity Web Translator] version=' + stats.version);
         console.info('[Unity Web Translator] otherRuntime=' + (window.__CocosWebTranslator ? 'cocos' : 'none')); report();
       },
     });
