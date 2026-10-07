@@ -4,12 +4,13 @@
   if (window.__UnityWebTranslator) { window.__UnityWebTranslator.synchronize(); return; }
   const resources = globalThis.__UnityTextResources, xhrAdapter = globalThis.__UnityTextXHR;
   if (!resources || !xhrAdapter) return;
-  const channel = 'unity-web-translator-v1', nativeFetch = window.fetch, NativeXHR = window.XMLHttpRequest;
+  const channel = 'unity-web-translator-v1', responseEvent = channel + '-response', nativeFetch = window.fetch, NativeXHR = window.XMLHttpRequest;
   const pending = new Map(), held = new Set(), bindings = new Map();
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
-  let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing;
-  const stats = { version: '0.1.0', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
+  const stats = { version: '0.2.4', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
+  stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
   const signature = value => JSON.stringify([value.profileId, value.revision, value.providerSignature, value.paused,
     value.storyEnabled, value.uiEnabled, value.historyEnabled, value.historyMaxEntries, value.resourceRules]);
@@ -19,17 +20,18 @@
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { pending.delete(id); reject(new Error('Translation bridge timeout')); }, timeout);
       pending.set(id, { resolve, reject, timer });
-      window.postMessage({ channel, direction: 'request', id, action, payload }, location.origin);
+      window.dispatchEvent(new CustomEvent(channel + '-request', { detail: JSON.stringify({ channel, direction: 'request', id, action, payload }) }));
     });
   }
   function receive(event) {
-    const message = event.data;
-    if (event.source !== window || event.origin !== location.origin || message?.channel !== channel || message.direction !== 'response') return;
+    if (event.target !== window || typeof event.detail !== 'string' || event.detail.length > 200000) return;
+    let message; try { message = JSON.parse(event.detail); } catch { return; }
+    if (message?.channel !== channel || message.direction !== 'response') return;
     const entry = pending.get(message.id); if (!entry) return;
     pending.delete(message.id); clearTimeout(entry.timer);
     if (message.ok) entry.resolve(message.data); else entry.reject(new Error('Translation extension unavailable'));
   }
-  window.addEventListener('message', receive);
+  window.addEventListener(responseEvent, receive);
   function detectUnity() {
     try { stats.unityDetected = !!document.querySelector('#unity-canvas') || [...document.querySelectorAll('script')].some(script => /(?:UnityLoader|createUnityInstance|\.framework\.js|\.loader\.js)/.test(script.getAttribute('src') || script.textContent || '')); } catch { /* Detection does not authorize translation. */ }
   }
@@ -49,6 +51,7 @@
     try { rules = resources.validateRules(value.resourceRules || []); } catch { rules = []; }
     if (!value.historyEnabled || contextChanged) history = [];
     if (changed) {
+      nativeLabels?.invalidate();
       epoch++; for (const cancel of held) cancel();
       for (const binding of bindings.values()) { binding.generation++; try { binding.apply(binding.original); } catch { /* The owning game may have disposed its label. */ } }
       if (!value.paused && !value.profileRequired) for (const binding of bindings.values()) render(binding, false);
@@ -154,6 +157,18 @@
     }
     return result;
   }
+  async function loadFont() {
+    let result;
+    for (let offset = 0; ; offset += 65536) {
+      const chunk = await transport('getNativeFont', { offset });
+      if (chunk?.offset !== offset || !Number.isInteger(chunk.total) || chunk.total < 1000 || chunk.total > 12000000 || typeof chunk.data !== 'string' || chunk.data.length > 88000) throw new Error('Invalid font response');
+      result ||= new Uint8Array(chunk.total);
+      const binary = atob(chunk.data);
+      if (chunk.total !== result.length || binary.length !== Math.min(65536, result.length - offset)) throw new Error('Invalid font chunk size');
+      for (let i = 0; i < binary.length; i++) result[offset + i] = binary.charCodeAt(i);
+      if (offset + binary.length === result.length) return result;
+    }
+  }
   function render(binding, recordHistory = true) {
     const generation = binding.generation;
     translate(binding.original, { ...binding.options, recordHistory: false }).then(text => {
@@ -180,7 +195,8 @@
     clearInterval(syncTimer); clearInterval(reportTimer);
     for (const cancel of held) cancel();
     for (const binding of bindings.values()) try { binding.apply(binding.original); } catch { /* Label disposed. */ }
-    bindings.clear(); window.removeEventListener('message', receive);
+    bindings.clear(); window.removeEventListener(responseEvent, receive);
+    nativeLabels?.dispose(); disposeWasm?.();
     for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Translation disposed')); } pending.clear();
     if (window.fetch === wrappedFetch) window.fetch = nativeFetch;
     if (window.XMLHttpRequest === WrappedXHR) window.XMLHttpRequest = NativeXHR;
@@ -193,6 +209,27 @@
   const publicApi = Object.freeze({ version: stats.version, translate, bind, resetHistory: () => { history = []; scene = ''; } });
   window.UnityWebTranslator = publicApi;
   window.__UnityWebTranslator = Object.freeze({ version: stats.version, applyPreferences, synchronize, uninstall, diagnostics: () => ({ ...stats, paths: [...stats.paths], configuredRules: rules.length }) });
+  if (globalThis.__UnityWasmTools && globalThis.__UnityNativeLabels) {
+    disposeWasm = globalThis.__UnityWasmTools.install({
+      builds: globalThis.__UnityNativeLabels.builds,
+      enabled: () => !disposed && !prefs.profileRequired && !!prefs.profileId,
+      createHandlers(exports) {
+        nativeLabels = globalThis.__UnityNativeLabels.create(exports, {
+          active: () => !disposed && !prefs.profileRequired && !prefs.paused,
+          enabled, translate, bind, resetHistory: publicApi.resetHistory,
+          context: () => epoch, lookahead: () => prefs.prefetchLookahead ?? 3,
+          onBound: () => { stats.nativeLabelCalls++; },
+          onStory: () => { stats.nativeStoryCalls++; }, loadFont,
+          fontStatus: value => { stats.fontStatus = value; console.info('[Unity Web Translator] font=' + value); },
+        });
+        return nativeLabels.handlers;
+      },
+      onStatus: value => {
+        stats.wasmStatus = value; console.info('[Unity Web Translator] native=' + value);
+        console.info('[Unity Web Translator] otherRuntime=' + (window.__CocosWebTranslator ? 'cocos' : 'none')); report();
+      },
+    });
+  }
   const syncTimer = setInterval(synchronize, 3000), reportTimer = setInterval(report, 3000);
   synchronize().then(report);
 })();

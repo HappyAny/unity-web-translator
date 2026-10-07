@@ -97,6 +97,8 @@ async function readRuntime() {
     const totals = reports.reduce((sum, row) => ({ changed: sum.changed + row.translatedStrings, matched: sum.matched + row.matchedResources,
       selected: sum.selected + row.selectedStrings, bridge: sum.bridge + row.bridgeCalls, opaque: sum.opaque + row.opaqueRequests }), { changed: 0, matched: 0, selected: 0, bridge: 0, opaque: 0 });
     $('runtimeStatus').textContent = totals.changed ? t('nativeTranslated', totals) : totals.bridge || totals.selected ? t('nativeConnected', totals) : t('nativeNoInterface', totals);
+    if (reports.some(row => row.wasmStatus === 'ready')) $('runtimeStatus').textContent = t('nativeWasmReady') + ' ' + $('runtimeStatus').textContent;
+    else if (reports.some(row => row.wasmStatus === 'failed')) $('runtimeStatus').textContent += ' ' + t('nativeWasmFailed');
     if (preferences?.paused) $('runtimeStatus').textContent += ' ' + t('translationPaused');
     $('runtimePaths').textContent = reports.flatMap(row => [row.origin + ' · v' + row.version, ...row.paths]).join('\n');
   } catch { $('runtimeStatus').textContent = t('nativeWaiting'); }

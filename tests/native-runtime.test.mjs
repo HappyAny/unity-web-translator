@@ -33,7 +33,8 @@ let responseRaw = '{ "id":900719925474099312345, "lines":[{"speaker":"アリス"
 const win = {
   addEventListener(type, callback) { if (!callbacks.has(type)) callbacks.set(type, new Set()); callbacks.get(type).add(callback); },
   removeEventListener(type, callback) { callbacks.get(type)?.delete(callback); },
-  postMessage(data, origin) { assert.equal(origin, location.origin); const copied = structuredClone(data); queueMicrotask(() => { for (const callback of [...(callbacks.get('message') || [])]) callback({ source: win, origin, data: copied }); }); },
+  postMessage() { assert.fail('Extension communication must not trigger the host iframe message listener'); },
+  dispatchEvent(event) { Object.defineProperty(event, 'target', { value: win, configurable: true }); for (const callback of [...(callbacks.get(event.type) || [])]) callback(event); return true; },
   async fetch(input, init) {
     assert.equal(this, win, 'Native fetch must keep its Window receiver'); gameRequests.push({ input, init });
     const response = new Response(responseRaw, { status: 200, statusText: 'OK', headers: { 'Content-Type': String(input).includes('.wasm') ? 'application/wasm' : 'application/json', 'Content-Length': String(Buffer.byteLength(responseRaw)), ETag: 'original' } });
@@ -44,7 +45,7 @@ const win = {
 const originalFetch = win.fetch;
 const sandbox = { window: win, location, document: { readyState: 'loading', querySelector: selector => selector === '#unity-canvas' ? {} : null, querySelectorAll: () => [] },
   chrome: { runtime: { sendMessage: message => { pageMessages.push(structuredClone(message)); return send(message, pageSender); } } },
-  URL, Response, Headers, TextDecoder, TextEncoder, DOMException, Event, ProgressEvent, AbortController,
+  URL, Response, Headers, TextDecoder, TextEncoder, DOMException, Event, CustomEvent, ProgressEvent, AbortController,
   setTimeout: (fn, milliseconds) => setTimeout(fn, fastDeadlines && milliseconds === 15000 ? 25 : milliseconds), clearTimeout,
   setInterval: callback => { intervalCallbacks.push(callback); return intervalCallbacks.length; }, clearInterval: () => {},
 };

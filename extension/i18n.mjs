@@ -1,7 +1,9 @@
 // UI language is independent of the language used for game translations.
 export const messages = Object.fromEntries([
   ['resourceRules', '原生文本资源规则 · JSON', 'Native text resource rules · JSON'],
-  ['resourceRulesHint', '仅翻译指定 GET JSON 资源中的字符串字段。需要先了解该网页的文本格式；保存后刷新网页。留空数组时仅使用已接入的 Unity 文本桥。', 'Translate selected string fields in matching GET JSON resources. Inspect the page’s text format first; refresh after saving. An empty array enables only an integrated Unity text bridge.'],
+  ['resourceRulesHint', '指定 GET JSON 的字符串字段；匹配内置适配器的 Unity 构建可留空，直接使用原生文字组件。保存后刷新网页。', 'Select string fields in GET JSON resources. Supported Unity builds can leave this empty and use native text components. Refresh after saving.'],
+  ['nativeWasmReady', '原生组件适配已就绪。', 'The native component adapter is ready.'],
+  ['nativeWasmFailed', '原生组件适配未启动，保留游戏原有行为。', 'The native component adapter could not start; original game behavior is retained.'],
   ['nativeLimits', '每个资源最多 1 MiB、32 条文本，最多等待 15 秒；失败时使用原文。字体需由 Unity 项目提供目标语言字形。', 'Up to 1 MiB and 32 selected strings per resource; a 15-second maximum wait with original-text fallback. The Unity project must supply glyphs for the target language.'],
   ['exampleRules', '填写示例规则', 'Insert example rules'],
   ['exampleRulesHint', '这是格式示例，请按网页实际资源路径与字段调整。保存规则后刷新网页。', 'This is a format example. Adjust the path and fields to the page’s real resources, then save and refresh.'],
@@ -140,7 +142,7 @@ export const messages = Object.fromEntries([
   ['usage', '今日已提交 {used} / {limit} 字符 · 剩余 {remaining}', 'Today: {used} / {limit} characters · {remaining} remaining'],
   ['syncHint', '所有已绑定网页共用这些设置，每三秒同步。', 'All bound pages share these settings and sync every three seconds.'],
   ['uiCoverage', '哪些界面文字可以翻译？', 'Which interface text can be translated?'],
-  ["uiCoverageHint", "仅支持已配置的 JSON 文本字段或已经接入文本桥的组件；不扫描 Unity 内存，资源包或图片中的文字需要其他适配。", "Only configured JSON string fields and components connected to the text bridge are supported. Unity memory is not scanned; asset bundles and image text require other adapters."],
+  ["uiCoverageHint", "支持已配置的 JSON 字段、文本桥，以及匹配内置适配器的原生文字组件。图片中的文字不处理。", "Supports configured JSON fields, integrated text bridges, and native text components in supported builds. Text inside images is not processed."],
   ['clearCache', '清空当前 Profile 的自动缓存', 'Clear this profile’s automatic cache'],
   ['editsKept', '各语言的个人修订会保留。', 'Personal edits in all languages are kept.'],
   ['personalTitle', '当前 Profile · 本地译文与个人修订', 'Current profile · Local translations and personal edits'],

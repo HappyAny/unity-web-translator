@@ -1,16 +1,20 @@
 {
   "name": "unity-web-translator",
-  "version": "0.1.0",
+  "version": "0.2.4",
   "private": true,
   "description": "A browser extension for translating Unity Web text.",
   "type": "module",
   "license": "GPL-3.0-only",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "check": "node scripts/check.mjs",
     "build": "node scripts/build.mjs",
     "test": "node tests/run.mjs",
     "icons": "node scripts/icons.mjs"
   },
-  "devDependencies": {"fake-indexeddb": "6.2.5"}
+  "devDependencies": {
+    "fake-indexeddb": "6.2.5"
+  }
 }

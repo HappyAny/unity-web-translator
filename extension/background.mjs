@@ -3,6 +3,8 @@ import { validateItems } from './engine.mjs';
 import { apiPermissionPattern } from './core.mjs';
 import { createSiteAccess } from './site-access.mjs';
 import glossary from './glossary.mjs';
+import { createFontReader } from './native-font.mjs';
+const nativeFont = createFontReader({ url: chrome.runtime.getURL('fonts/cjk-fallback.ttf') });
 const secureStorage = Promise.all(['local', 'session'].map(area => chrome.storage[area].setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' })));
 const sites = createSiteAccess(chrome);
 const profiles = new ProfileManager({ storage: chrome.storage, indexedDB, glossary,
@@ -17,6 +19,10 @@ function runtimeReport(payload) {
   }
   result.version = typeof payload.version === 'string' && /^\d+\.\d+\.\d+$/.test(payload.version) ? payload.version : '';
   result.unityDetected = payload.unityDetected === true; result.lateInjection = payload.lateInjection === true;
+  result.wasmStatus = ['waiting', 'ready', 'failed'].includes(payload.wasmStatus) ? payload.wasmStatus : 'waiting';
+  result.nativeLabelCalls = Number.isSafeInteger(payload.nativeLabelCalls) && payload.nativeLabelCalls >= 0 ? Math.min(1000000, payload.nativeLabelCalls) : 0;
+  result.fontStatus = ['waiting', 'loading', 'available', 'ready', 'failed'].includes(payload.fontStatus) ? payload.fontStatus : 'waiting';
+  result.nativeStoryCalls = Number.isSafeInteger(payload.nativeStoryCalls) && payload.nativeStoryCalls >= 0 ? Math.min(1000000, payload.nativeStoryCalls) : 0;
   result.paths = Array.isArray(payload.paths) ? payload.paths.slice(-12).filter(path => typeof path === 'string' && path.startsWith('/') && path.length <= 180 && !/[?#\r\n\0]/.test(path)) : [];
   return result;
 }
@@ -47,6 +53,11 @@ async function handle(message, sender) {
   if (action === 'getPreferences') {
     if (kind === 'page' || (new URL(sender.url).pathname === '/popup.html' && !message.profileId)) return profiles.pageView((await currentPage()).scope);
     return profiles.view(await selectedProfile());
+  }
+  if (action === 'getNativeFont' && kind === 'page') {
+    const page = await currentPage();
+    if (!page.binding) throw new Error('Select a Profile before loading the native font');
+    return nativeFont(payload);
   }
   if (action === 'setPreferences' && kind === 'settings') {
     const result = await profiles.configure(await selectedProfile(), payload, true); await broadcast(); return result;

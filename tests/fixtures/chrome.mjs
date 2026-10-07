@@ -8,7 +8,7 @@ export function chromeFixture() {
   const grants = new Set(), registered = new Map(), injected = [], frames = [{ frameId: 0, url: 'https://canvas.example.test/view' }, { frameId: 1, url: 'https://content.example.test/client' }, { frameId: 2, url: 'https://unselected.example.test/info' }];
   const chrome = {
     storage: { local: area(), session: area() },
-    runtime: { id: 'test-extension', onMessage: event(), onStartup: event(), openOptionsPage: async () => {} },
+    runtime: { id: 'test-extension', getURL: path => 'chrome-extension://test-extension/' + path, onMessage: event(), onStartup: event(), openOptionsPage: async () => {} },
     tabs: { query: async () => [{ id: 1 }] }, webNavigation: { getAllFrames: async () => frames },
     permissions: { contains: async ({ origins }) => origins.every(origin => grants.has(origin)), onRemoved: event() },
     scripting: {

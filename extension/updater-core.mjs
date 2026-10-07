@@ -1,9 +1,9 @@
 // Copyright (C) 2026 HappyAny. SPDX-License-Identifier: GPL-3.0-only
 const updateDecoder = new TextDecoder('utf-8', { fatal: true });
 const MAX_PACKAGE_BYTES = 10 * 1024 * 1024;
-const MAX_ENTRY_BYTES = 2 * 1024 * 1024;
+const MAX_ENTRY_BYTES = 12 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 20 * 1024 * 1024;
-const publicPath = /^(?:[a-z][a-z0-9-]*\.(?:mjs|js|html|css)|manifest\.json|README\.md|_locales\/(?:en|zh_CN)\/messages\.json|icons\/(?:16|32|48|128)\.png)$/;
+const publicPath = /^(?:[a-z][a-z0-9-]*\.(?:mjs|js|html|css)|manifest\.json|README\.md|_locales\/(?:en|zh_CN)\/messages\.json|icons\/(?:16|32|48|128)\.png|fonts\/(?:cjk-fallback\.ttf|OFL\.txt|README\.md))$/;
 export function compareVersions(left, right) {
   const parse = value => {
     if (typeof value !== 'string' || !/^\d+(?:\.\d+){0,3}$/.test(value)) throw new Error('更新包版本不合法');

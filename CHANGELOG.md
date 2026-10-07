@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.4
+
+- Add a fingerprint-checked IL2CPP WebAssembly component adapter for verified builds.
+- Write translations through original TextMeshPro setters without altering downloaded asset bundles or CRC checks.
+- Capture dialogue and role names, warm a bounded script cache, and release managed roots when components are disabled or destroyed.
+- Bind complete typewriter balloons instead of translating per-frame prefixes.
+- Bundle an OFL-licensed Chinese font with native dynamic glyph atlases and preserve the original text color and font when paused.
+- Add native font fallbacks for per-character text renderers, preserve existing fallback order and materials, and prevent individual letters from generating translation requests.
+- Refresh active per-character dialogue after translation, restore the original sentence on pause, and retain a single native history entry for each sentence.
+- Use independent string CustomEvents for extension communication without triggering host postMessage handlers.
+- Add component-adapter diagnostics and tests for typed WASM calls, lifecycle cleanup, original fallback and stale responses.
+- Keep shared services, independent profiles, pause controls and same-directory updates.
+
 ## 0.1.0
 
 - Initial independent Unity Web extension with explicit native text adapters.
