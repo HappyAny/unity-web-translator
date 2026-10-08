@@ -39,6 +39,52 @@ active = true; const unknown = fixture.slice(); unknown[unknown.length - 1] = 1;
 result = await WebAssembly.instantiate(unknown); assert.equal(result.instance.exports.add(2, 3), 5, 'A different fingerprint keeps native behavior');
 restore(); assert.equal(WebAssembly.instantiate, nativeInstantiate);
 
+const minified = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0,
+  ...section(1, [1, 0x60, 2, 0x7f, 0x7f, 1, 0x7f]),
+  ...section(3, [1, 0]), ...section(4, [1, 0x70, 1, 1, 1]), ...section(5, [1, 0, 1]),
+  ...section(7, [3, ...text('a'), 0, 0, ...text('b'), 1, 0, ...text('c'), 2, 0]),
+  ...section(10, [1, 7, 0, 0x20, 0, 0x20, 1, 0x6a, 0x0b]),
+  ...section(0, [...text('padding'), ...new Array(1100).fill(0)]),
+]);
+const minSpec = { ...spec, sha256: createHash('sha256').update(minified).digest('hex'),
+  runtimeExports: { memory: 'c', __indirect_function_table: 'b', malloc: 'a', free: 'a' } };
+const minStates = [];
+const restoreMin = tools.install({ builds: [minSpec], enabled: () => true, createHandlers: native => {
+  assert.equal(native.memory, native.c); assert.equal(native.__indirect_function_table, native.b);
+  assert.equal(native.malloc, native.a); assert.equal(native.free, native.a);
+  return { add: (original, a, b) => original(a, b) + 20 };
+}, onStatus: state => minStates.push(state) });
+const minResult = await WebAssembly.instantiate(minified);
+assert.equal(minResult.instance.exports.a(2, 3), 25, 'Minified exports retain the framework entry points and typed hooks');
+assert.deepEqual(minStates, ['ready']); restoreMin();
+for (const runtimeExports of [{ memory: 'a' }, { memory: 'missing' }, { arbitrary: 'a' }, { a: 'a' }])
+  assert.throws(() => tools.rewrite(minified, { ...minSpec, runtimeExports }), /Invalid WASM runtime export/);
+assert.throws(() => tools.rewrite(fixture, { ...spec, runtimeExports: { __indirect_function_table: '__indirect_function_table' } }), /Duplicate helper export/);
+const restoreInvalid = tools.install({ builds: [{ ...minSpec, runtimeExports: { memory: 'a' } }], enabled: () => true,
+  createHandlers: () => { throw new Error('Invalid export map must fail before handler creation'); }, onStatus: state => minStates.push(state) });
+assert.equal((await WebAssembly.instantiate(minified)).instance.exports.a(2, 3), 5, 'An invalid runtime alias falls back to the untouched module');
+assert.equal(minStates.at(-1), 'failed'); restoreInvalid();
+
+// A native update can carry frame time as f32/f64 alongside managed pointers.
+const timed = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0,
+  ...section(1, [1, 0x60, 3, 0x7f, 0x7d, 0x7c, 1, 0x7f]),
+  ...section(3, [1, 0]), ...section(4, [1, 0x70, 1, 1, 1]),
+  ...section(7, [2, ...text('tick'), 0, 0, ...text('__indirect_function_table'), 1, 0]),
+  ...section(10, [1, 4, 0, 0x20, 0, 0x0b]),
+  ...section(0, [...text('padding'), ...new Array(1100).fill(0)]),
+]);
+const timedSpec = { sha256: createHash('sha256').update(timed).digest('hex'), importedFunctions: 0, hooks: [{ name: 'tick', function: 0 }] };
+let tickArgs;
+const restoreTimed = tools.install({ builds: [timedSpec], enabled: () => true,
+  createHandlers: () => ({ tick: (original, ...args) => { tickArgs = args; return original(...args); } }) });
+const timedResult = await WebAssembly.instantiate(timed);
+assert.equal(timedResult.instance.exports.tick(1234, 1 / 60, 0.000000000125), 1234);
+assert.deepEqual(tickArgs, [1234, Math.fround(1 / 60), 0.000000000125], 'Typed hooks preserve both float widths and native pointers');
+restoreTimed();
+const unsupported = timed.slice(); unsupported[14] = 0x7e;
+assert(WebAssembly.validate(unsupported));
+assert.throws(() => tools.rewrite(unsupported, timedSpec), /Unsupported hook signature/, 'Unsupported integer widths are rejected before patching');
+
 // Exercise native string allocation, root lifetime, classification and disposal.
 const memory = new WebAssembly.Memory({ initial: 4 }); let cursor = 1024, nextHandle = 1, generation = 0;
 const roots = new Map(), labels = new Map(), bindings = new Map(), deferred = [];

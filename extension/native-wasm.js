@@ -59,12 +59,20 @@
     if (tableReader.uint() !== 1 || tableReader.byte() !== 0x70) throw new Error('Expected one function table');
     const flags = tableReader.uint(), minimum = tableReader.uint(), maximum = flags & 1 ? tableReader.uint() : null;
     if (flags > 1 || tableReader.offset !== byId.get(4).body.length || minimum > 1000000) throw new Error('Unsupported WASM table');
-    const exportReader = cursor(byId.get(7).body), exports = [], names = new Set();
+    const exportReader = cursor(byId.get(7).body), exports = [], names = new Set(), exportMap = new Map();
     for (let count = exportReader.uint(); count > 0; count--) {
       const start = exportReader.offset, text = new TextDecoder().decode(exportReader.take(exportReader.uint()));
-      exportReader.byte(); exportReader.uint(); names.add(text); exports.push(byId.get(7).body.subarray(start, exportReader.offset));
+      const kind = exportReader.byte(), index = exportReader.uint();
+      if (names.has(text)) throw new Error('Duplicate WASM export');
+      names.add(text); exportMap.set(text, { kind, index }); exports.push(byId.get(7).body.subarray(start, exportReader.offset));
     }
-    const addExport = (alias, index) => { if (names.has(alias)) throw new Error('Duplicate helper export'); names.add(alias); exports.push(concat([name(alias), Uint8Array.of(0), unsigned(index)])); };
+    const addExport = (alias, index, kind = 0) => { if (names.has(alias)) throw new Error('Duplicate helper export'); names.add(alias); exports.push(concat([name(alias), Uint8Array.of(kind), unsigned(index)])); };
+    const runtimeKinds = { memory: 2, __indirect_function_table: 1, malloc: 0, free: 0 };
+    for (const [alias, source] of Object.entries(spec.runtimeExports || {})) {
+      const entry = exportMap.get(source);
+      if (!Object.hasOwn(runtimeKinds, alias) || !entry || entry.kind !== runtimeKinds[alias]) throw new Error('Invalid WASM runtime export');
+      addExport(alias, entry.index, entry.kind);
+    }
     const originals = [], hooks = [], seen = new Set(), imported = spec.importedFunctions;
     if (!Number.isInteger(imported) || imported < 0 || imported > 10000) throw new Error('Invalid WASM imports');
     for (const [index, hook] of spec.hooks.entries()) {
@@ -72,7 +80,7 @@
       if (defined < 0 || defined >= bodies.length || seen.has(defined)) throw new Error('Invalid WASM hook index');
       seen.add(defined);
       const type = functions[defined], signature = types[type];
-      if (!signature || signature.args.some(arg => arg !== 0x7f) || signature.returns.some(ret => ret !== 0x7f) || signature.returns.length > 1) throw new Error('Unsupported hook signature');
+      if (!signature || signature.args.some(arg => ![0x7f, 0x7d, 0x7c].includes(arg)) || signature.returns.some(ret => ret !== 0x7f) || signature.returns.length > 1) throw new Error('Unsupported hook signature');
       const original = bodies[defined], slot = minimum + index, alias = '__uwt_original_' + hook.name;
       originals.push({ body: original, type }); addExport(alias, imported + functions.length + index);
       const instructions = [Uint8Array.of(0)];

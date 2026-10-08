@@ -3,21 +3,24 @@
   'use strict';
   if (root.__UnityNativeFont) return;
   function create(exports, options) {
-    let bytes, asset = 0, handle = 0, legacyAsset = 0, legacyHandle = 0, legacyFailed = false, disposed = false, failed = false;
+    let bytes, fileReady = false, asset = 0, handle = 0, legacyAsset = 0, legacyHandle = 0, legacyFailed = false, disposed = false, failed = false, reportedReady = false;
     const seen = new Set(), observed = new Map(), legacyObserved = new Map(), fallbacks = new Map(), memory = exports.memory;
     let faceProperty;
-    const available = ['__uwt_type', '__uwt_array', '__uwt_write_file', '__uwt_create_font', '__uwt_font', '__uwt_set_font', '__uwt_add_chars'].every(name => typeof exports[name] === 'function');
-    if (!available || typeof options.load !== 'function') return null;
+    const commonAvailable = ['__uwt_type', '__uwt_array', '__uwt_write_file'].every(name => typeof exports[name] === 'function');
+    const tmpAvailable = ['__uwt_create_font', '__uwt_font', '__uwt_set_font', '__uwt_add_chars'].every(name => typeof exports[name] === 'function');
+    const legacyAvailable = ['__uwt_new_object', '__uwt_legacy_ctor', '__uwt_legacy_has_char', '__uwt_legacy_font', '__uwt_legacy_set_font'].every(name => typeof exports[name] === 'function');
+    if (!commonAvailable || (!tmpAvailable && !legacyAvailable) || typeof options.load !== 'function') return null;
     const status = value => options.status?.(value);
+    const ready = () => { if (!reportedReady) { reportedReady = true; status('ready'); } };
     status('loading');
     Promise.resolve().then(options.load).then(value => {
       if (disposed) return;
       if (!(value instanceof Uint8Array) || value.byteLength < 1000 || value.byteLength > 12000000) throw new Error('Invalid bundled font');
       bytes = value; status('available'); refresh(); options.ready?.();
     }).catch(() => { if (!disposed) { failed = true; status('failed'); } });
-    function initialize() {
-      if (disposed || failed) return 0;
-      if (asset || !bytes) return asset;
+    function prepareFile() {
+      if (fileReady) return true;
+      if (disposed || failed || !bytes) return false;
       const roots = [];
       try {
         // This layout belongs to the fingerprint-gated 32-bit native adapter.
@@ -35,11 +38,29 @@
         if (!roots.at(-1)) throw new Error('Native font path unavailable');
         // Unity's in-memory filesystem only; no files are written to the host.
         exports.__uwt_write_file(path, array, 0);
-        asset = exports.__uwt_create_font(path, 0, 48, 5, 4165, 1024, 1024, 1, 1, 0);
+        fileReady = true; bytes = null;
+      } catch { failed = true; bytes = null; status('failed'); }
+      finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
+      return fileReady;
+    }
+    function initialize() {
+      if (disposed || failed || !tmpAvailable) return 0;
+      if (asset || !prepareFile()) return asset;
+      const roots = [];
+      try {
+        if (options.createFontFromLegacy) {
+          const source = legacyInitialize();
+          if (!source) throw new Error('Native source font unavailable');
+          asset = exports.__uwt_create_font(source, 48, 5, 4165, 1024, 1024, 1, 1, 0);
+        } else {
+          const path = options.string('/tmp/unity-translator-cjk.ttf'); roots.push(exports.__uwt_root(path, 0, 2));
+          if (!roots.at(-1)) throw new Error('Native font path unavailable');
+          asset = exports.__uwt_create_font(path, 0, 48, 5, 4165, 1024, 1024, 1, 1, 0);
+        }
         if (!asset) throw new Error('Native font creation failed');
         handle = exports.__uwt_root(asset, 0, 2);
         if (!handle) throw new Error('Native font root unavailable');
-        bytes = null; status('ready');
+        ready();
       } catch {
         asset = 0; failed = true; bytes = null; status('failed');
       } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
@@ -147,10 +168,11 @@
         if (state?.material) exports.__uwt_set_material(pointer, state.material, 0);
         if (state?.color) setColor(pointer, state.color);
     }
-    const legacyAvailable = ['__uwt_new_object', '__uwt_legacy_ctor', '__uwt_legacy_has_char', '__uwt_legacy_font', '__uwt_legacy_set_font'].every(name => typeof exports[name] === 'function');
     function legacyInitialize() {
-      if (!legacyAvailable || legacyFailed || disposed || !initialize()) return 0;
+      if (!legacyAvailable || legacyFailed || disposed) return 0;
       if (legacyAsset) return legacyAsset;
+      if (tmpAvailable && !options.createFontFromLegacy) { if (!initialize()) return 0; }
+      else if (!prepareFile()) return 0;
       const address = options.legacyTypeAddress, roots = []; let phase = 'type', dynamic = false;
       try {
         if (!Number.isInteger(address) || address < 8 || address + 4 > memory.buffer.byteLength) throw new Error('Legacy font layout unavailable');
@@ -164,7 +186,19 @@
         roots.push(exports.__uwt_root(path, 0, 2));
         if (!value || roots.some(root => !root)) throw new Error('Legacy font root unavailable');
         phase = 'constructor';
-        exports.__uwt_legacy_ctor(value, path, 0);
+        if (options.legacyNamesArray) {
+          const arrayAddress = options.stringArrayTypeAddress;
+          if (!Number.isInteger(arrayAddress) || arrayAddress < 8 || arrayAddress + 4 > memory.buffer.byteLength) throw new Error('Native font names unavailable');
+          exports.__uwt_type(arrayAddress);
+          const arrayType = new DataView(memory.buffer).getUint32(arrayAddress, true);
+          if (!arrayType) throw new Error('Native font names type unavailable');
+          const names = exports.__uwt_array(arrayType, 1);
+          roots.push(exports.__uwt_root(names, 0, 2));
+          const view = new DataView(memory.buffer);
+          if (!names || !roots.at(-1) || names + 20 > view.byteLength || view.getUint32(names + 12, true) !== 1) throw new Error('Native font names array unavailable');
+          view.setUint32(names + 16, path, true);
+          exports.__uwt_legacy_ctor(value, names, 48, 0);
+        } else exports.__uwt_legacy_ctor(value, path, 0);
         dynamic = !!exports.__uwt_legacy_dynamic?.(value, 0);
         phase = 'request';
         if (typeof exports.__uwt_legacy_request_chars === 'function') {
@@ -174,10 +208,12 @@
         }
         phase = 'glyph';
         if (!exports.__uwt_legacy_has_char(value, 0x8bd1, 0)) throw new Error('Legacy font glyphs unavailable');
-        legacyAsset = value; legacyHandle = roots.shift();
+        legacyAsset = value; legacyHandle = roots.shift(); ready();
         console.info('[Unity Web Translator] legacyFont=ready');
       } catch {
-        legacyFailed = true; console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic);
+        legacyFailed = true;
+        if (!tmpAvailable || options.createFontFromLegacy) status('failed');
+        console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic);
       } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
       return legacyAsset;
     }
@@ -222,7 +258,7 @@
       for (const root of entry.roots) if (root) exports.__uwt_unroot(root);
     }
     function observe(pointer, text) {
-      if (disposed || options.active?.() === false || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) return;
+      if (!tmpAvailable || disposed || options.active?.() === false || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) return;
       let entry = observed.get(pointer);
       if (!entry) {
         if (observed.size >= 512) return;

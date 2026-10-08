@@ -51,11 +51,48 @@
       __uwt_new_object: 1417, __uwt_legacy_ctor: 33323, __uwt_legacy_has_char: 33333,
       __uwt_legacy_request_chars: 33344, __uwt_legacy_dynamic: 33253,
       __uwt_legacy_font: 139207, __uwt_legacy_set_font: 139209, __uwt_legacy_text: 25118 },
+  }, {
+    sha256: 'adc902bca80fb14b6963d32196a7691a55d500614515f6c15a3b410153d2d162',
+    importedFunctions: 612,
+    runtimeExports: { memory: 'tk', __indirect_function_table: 'Sk', malloc: 'Nk', free: 'Ok' },
+    font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true },
+    layout: { novel: { body: 68, name: 72 } },
+    hooks: [
+      { name: 'labelSet', function: 133895 }, { name: 'labelEnable', function: 134421 },
+      { name: 'labelDisable', function: 134413 }, { name: 'labelDestroy', function: 134408 },
+      { name: 'labelProcessing', function: 8929 }, { name: 'meshEnable', function: 134710 },
+      { name: 'meshDisable', function: 134709 }, { name: 'meshDestroy', function: 134708 },
+      { name: 'legacySet', function: 184705 }, { name: 'legacyEnable', function: 73257 },
+      { name: 'legacyDisable', function: 73256 }, { name: 'legacyDestroy', function: 43092 },
+      { name: 'novelWindow', function: 123757 }, { name: 'novelLength', function: 17997 },
+    ],
+    exports: { __uwt_string: 68674, __uwt_label_text: 133901, __uwt_root: 30849, __uwt_unroot: 175606,
+      __uwt_write_file: 31346, __uwt_create_font: 43274, __uwt_font: 2999, __uwt_set_font: 29135,
+      __uwt_add_chars: 95755, __uwt_fallbacks: 4516, __uwt_dirty: 134570, __uwt_legacy_ctor: 116252,
+      __uwt_legacy_has_char: 18055, __uwt_legacy_request_chars: 116142, __uwt_legacy_dynamic: 6059, __uwt_legacy_font: 184707,
+      __uwt_legacy_set_font: 5804, __uwt_legacy_text: 2917, __uwt_text_data_raw: 6739, __uwt_type: 612,
+      __uwt_array: 628, __uwt_new_object: 615 },
+  }, {
+    sha256: '71962a64c4e0f31ff858f2b83346de116d7709c5fbada7dbce468b27997206c6',
+    importedFunctions: 589,
+    runtimeExports: { memory: 'Yj', __indirect_function_table: 'yk', malloc: 'mk', free: 'nk' },
+    font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyNamesArray: true, stringArrayTypeAddress: 5983396 },
+    layout: { message: { text: 8, name: 12, view: 24 } },
+    hooks: [
+      { name: 'legacySet', function: 49186 }, { name: 'legacyEnable', function: 49161 },
+      { name: 'legacyDisable', function: 49160 }, { name: 'legacyDestroy', function: 48977 },
+      { name: 'messageFrame', function: 26272 }, { name: 'messageText', function: 16537 },
+      { name: 'nameSet', function: 26293 },
+    ],
+    exports: { __uwt_string: 1212, __uwt_label_text: 5053, __uwt_root: 113391, __uwt_unroot: 113379,
+      __uwt_write_file: 113636, __uwt_legacy_ctor: 69089, __uwt_legacy_has_char: 28015, __uwt_legacy_dynamic: 69112,
+      __uwt_legacy_font: 49188, __uwt_legacy_set_font: 7282, __uwt_legacy_text: 5053, __uwt_type: 589,
+      __uwt_array: 599, __uwt_new_object: 591 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
     const revealable = new Set();
-    let scene = 0, speaker = '', busy = false, replaying = false, disposed = false;
+    let scene = 0, speaker = '', busy = false, replaying = false, disposed = false, messageContext, legacyContext;
     const memory = exports.memory;
     if (!(memory instanceof WebAssembly.Memory)) throw new Error('Native memory unavailable');
     for (const name of ['malloc', 'free', '__uwt_string', '__uwt_label_text', '__uwt_root', '__uwt_unroot']) if (typeof exports[name] !== 'function') throw new Error('Native string helpers unavailable');
@@ -88,7 +125,7 @@
       ready: () => { for (const slot of slots.values()) if (slot.output !== slot.text) slot.apply?.(slot.output); } });
     function drop(pointer) {
       const slot = slots.get(pointer); if (!slot) return;
-      slots.delete(pointer); balloons.delete(pointer); slot.release?.();
+      slots.delete(pointer); balloons.delete(pointer); if (slot.legacy) revealable.delete(pointer); slot.release?.();
       if (slot.fontState) try { if (slot.legacy) font?.restoreLegacy(pointer, slot.fontState); else font?.restore(pointer, slot.fontState); } catch { /* Component may already be disposing. */ }
       for (const handle of slot.roots) if (handle) exports.__uwt_unroot(handle);
     }
@@ -155,10 +192,30 @@
         }
       }).catch(() => {});
     }
+    function wholeLegacy(original, pointer, value, info, context) {
+      if (!options.active() || !options.enabled(context.kind)) { drop(pointer); return original(pointer, value, info); }
+      const visible = read(value), full = read(context.value);
+      if (!visible.trim() || !full.trim()) { drop(pointer); return original(pointer, value, info); }
+      const current = slots.get(pointer);
+      if (current?.text === full && current.output !== full) return;
+      const result = original(pointer, value, info);
+      if (current?.text === full) return result;
+      let initial = true, lastOutput = full;
+      bind(pointer, context.value, (_label, next) => {
+        if (initial) { initial = false; return; }
+        const output = read(next, 10000);
+        if (output === lastOutput) return;
+        original(pointer, next, info);
+        lastOutput = output;
+        if (context.novel) exports.__uwt_original_novelLength?.(pointer, 0x7fffffff, 0);
+      }, context.owner, context, true);
+      if (slots.has(pointer)) { revealable.add(pointer); options.onStory?.(); }
+      return result;
+    }
     function reset() {
       for (const pointer of [...slots.keys()]) drop(pointer);
       for (const pointer of [...windows.keys()]) dropWindow(pointer);
-      sources.clear(); translated.clear(); glyphs.clear(); revealable.clear(); speaker = ''; scene++;
+      sources.clear(); translated.clear(); glyphs.clear(); revealable.clear(); messageContext = legacyContext = undefined; speaker = ''; scene++;
     }
     function rows(text) {
       // Read only a bounded CSV sample for prefetch. The original script is untouched.
@@ -193,17 +250,62 @@
         return result;
       },
       legacySet(original, pointer, value, info) {
+        if (!busy && !disposed) try {
+          const context = legacyContext?.labels ? legacyContext.labels.get(pointer) : legacyContext;
+          if (context) { font?.observeLegacy(pointer, read(context.value)); return wholeLegacy(original, pointer, value, info, context); }
+        } catch { /* Preserve native text if a whole-message context is unavailable. */ }
         const result = original(pointer, value, info);
+        if (busy || disposed) return result;
+        if (revealable.has(pointer)) { try { if (!read(value).trim()) drop(pointer); } catch { /* Retain native cleanup. */ } return result; }
         try { font?.observeLegacy(pointer, read(value)); bind(pointer, value, original, 0, undefined, true); } catch { /* Preserve legacy text if unavailable. */ }
         return result;
       },
       legacyEnable(original, pointer, info) {
         const result = original(pointer, info);
-        try { const value = exports.__uwt_legacy_text(pointer, 0); font?.observeLegacy(pointer, read(value)); bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true); } catch { /* Serialized text may not be initialized. */ }
+        if (!revealable.has(pointer)) try { const value = exports.__uwt_legacy_text(pointer, 0); font?.observeLegacy(pointer, read(value)); bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true); } catch { /* Serialized text may not be initialized. */ }
         return result;
       },
       legacyDisable(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
       legacyDestroy(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Other graphic components are unaffected. */ } return original(pointer, info); },
+      novelWindow(original, pointer, window, info) {
+        const previous = legacyContext;
+        try {
+          const layout = options.layout?.novel, view = new DataView(memory.buffer);
+          if (layout && pointer >= 8 && pointer + Math.max(layout.body, layout.name) + 4 <= view.byteLength && window >= 8 && window + 20 <= view.byteLength) {
+            const body = view.getUint32(pointer + layout.body, true), name = view.getUint32(pointer + layout.name, true);
+            const data = view.getUint32(window + 12, true), nameValue = view.getUint32(window + 16, true);
+            const value = data ? exports.__uwt_text_data_raw(data, 0) : 0;
+            speaker = read(nameValue); register(speaker, 'name', speaker); register(read(value), 'story', speaker);
+            const labels = new Map();
+            if (body) labels.set(body, { value, kind: 'story', speaker, owner: pointer, novel: true });
+            if (name) labels.set(name, { value: nameValue, kind: 'name', speaker, owner: pointer });
+            legacyContext = { labels };
+          }
+        } catch { legacyContext = previous; }
+        try { return original(pointer, window, info); } finally { legacyContext = previous; }
+      },
+      novelLength(original, pointer, length, info) {
+        const slot = slots.get(pointer);
+        if (slot?.legacy && slot.output !== slot.text && options.active() && options.enabled('story')) length = 0x7fffffff;
+        return original(pointer, length, info);
+      },
+      messageFrame(original, pointer, deltaTime, info) {
+        const previous = messageContext;
+        try {
+          const layout = options.layout?.message, view = new DataView(memory.buffer);
+          if (layout && pointer >= 8 && pointer + Math.max(layout.text, layout.name, layout.view) + 4 <= view.byteLength) {
+            const value = view.getUint32(pointer + layout.text, true), nameValue = view.getUint32(pointer + layout.name, true);
+            speaker = read(nameValue); register(speaker, 'name', speaker); register(read(value), 'story', speaker);
+            messageContext = { value, kind: 'story', speaker, owner: view.getUint32(pointer + layout.view, true) };
+          }
+        } catch { messageContext = previous; }
+        try { return original(pointer, deltaTime, info); } finally { messageContext = previous; }
+      },
+      messageText(original, pointer, value, info) {
+        const previous = legacyContext;
+        if (messageContext?.owner === pointer) legacyContext = messageContext;
+        try { return original(pointer, value, info); } finally { legacyContext = previous; }
+      },
       labelEnable(original, pointer, info) {
         const result = original(pointer, info);
         try { font?.observe(pointer, read(exports.__uwt_label_text(pointer, 0))); } catch { /* Component not ready. */ }
