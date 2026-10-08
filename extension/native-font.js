@@ -3,7 +3,7 @@
   'use strict';
   if (root.__UnityNativeFont) return;
   function create(exports, options) {
-    let bytes, fileReady = false, asset = 0, handle = 0, legacyAsset = 0, legacyHandle = 0, legacyFailed = false, disposed = false, failed = false, reportedReady = false;
+    let bytes, nativeBytes, fileReady = false, fileLength = 0, asset = 0, handle = 0, legacyAsset = 0, legacyHandle = 0, legacyFailed = false, disposed = false, failed = false, reportedReady = false;
     const seen = new Set(), observed = new Map(), legacyObserved = new Map(), fallbacks = new Map(), memory = exports.memory;
     let faceProperty;
     const commonAvailable = ['__uwt_type', '__uwt_array', '__uwt_write_file'].every(name => typeof exports[name] === 'function');
@@ -16,7 +16,8 @@
     Promise.resolve().then(options.load).then(value => {
       if (disposed) return;
       if (!(value instanceof Uint8Array) || value.byteLength < 1000 || value.byteLength > 12000000) throw new Error('Invalid bundled font');
-      bytes = value; status('available'); refresh(); options.ready?.();
+      bytes = value; if (options.legacyNativeData?.copy) nativeBytes = value;
+      status('available'); refresh(); options.ready?.();
     }).catch(() => { if (!disposed) { failed = true; status('failed'); } });
     function prepareFile() {
       if (fileReady) return true;
@@ -38,8 +39,8 @@
         if (!roots.at(-1)) throw new Error('Native font path unavailable');
         // Unity's in-memory filesystem only; no files are written to the host.
         exports.__uwt_write_file(path, array, 0);
-        fileReady = true; bytes = null;
-      } catch { failed = true; bytes = null; status('failed'); }
+        fileReady = true; fileLength = bytes.length; bytes = null;
+      } catch { failed = true; bytes = nativeBytes = null; status('failed'); }
       finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
       return fileReady;
     }
@@ -186,7 +187,8 @@
         roots.push(exports.__uwt_root(path, 0, 2));
         if (!value || roots.some(root => !root)) throw new Error('Legacy font root unavailable');
         phase = 'constructor';
-        if (options.legacyNamesArray) {
+        if (options.legacyEmptyConstructor) exports.__uwt_legacy_ctor(value, 0);
+        else if (options.legacyNamesArray) {
           const arrayAddress = options.stringArrayTypeAddress;
           if (!Number.isInteger(arrayAddress) || arrayAddress < 8 || arrayAddress + 4 > memory.buffer.byteLength) throw new Error('Native font names unavailable');
           exports.__uwt_type(arrayAddress);
@@ -199,6 +201,31 @@
           view.setUint32(names + 16, path, true);
           exports.__uwt_legacy_ctor(value, names, 48, 0);
         } else exports.__uwt_legacy_ctor(value, path, 0);
+        const layout = options.legacyNativeData;
+        if (layout) {
+          phase = 'native-data';
+          // Only this newly created fallback is touched, using the matched build's native layout.
+          let view = new DataView(memory.buffer);
+          const pointer = view.getUint32(value + 8, true);
+          if (!pointer || pointer + layout.data + 4 > view.byteLength) throw new Error('Native fallback object unavailable');
+          const data = view.getUint32(pointer + layout.data, true);
+          if (!data || data + Math.max(layout.buffer, layout.length, layout.dynamic) + 4 > view.byteLength) throw new Error('Native fallback data unavailable');
+          if (layout.copy) {
+            if (!nativeBytes || nativeBytes.length !== fileLength || data + layout.capacity + 4 > view.byteLength) throw new Error('Native fallback source unavailable');
+            // Reserve through Unity's own byte-vector allocator; its normal destructor owns the buffer.
+            if ((view.getUint32(data + layout.capacity, true) >>> 1) < fileLength) exports.__uwt_legacy_reserve_native(data + layout.buffer, fileLength, 1);
+            view = new DataView(memory.buffer);
+            const target = view.getUint32(data + layout.buffer, true), capacity = view.getUint32(data + layout.capacity, true) >>> 1;
+            if (!target || capacity < fileLength || capacity > 24000000 || target + capacity > view.byteLength) throw new Error('Native fallback allocation unavailable');
+            new Uint8Array(memory.buffer, target, fileLength).set(nativeBytes);
+            view.setUint32(data + layout.length, fileLength, true); nativeBytes = null;
+          }
+          const buffer = view.getUint32(data + layout.buffer, true), length = view.getUint32(data + layout.length, true);
+          if (!buffer || length !== fileLength || buffer + length > view.byteLength || view.getUint32(buffer, false) !== 0x00010000) throw new Error('Native fallback bytes unavailable');
+          view.setInt32(data + layout.dynamic, -2, true);
+          exports.__uwt_legacy_initialize_native(data);
+          exports.__uwt_legacy_refresh_native(data);
+        }
         dynamic = !!exports.__uwt_legacy_dynamic?.(value, 0);
         phase = 'request';
         if (typeof exports.__uwt_legacy_request_chars === 'function') {
@@ -211,7 +238,7 @@
         legacyAsset = value; legacyHandle = roots.shift(); ready();
         console.info('[Unity Web Translator] legacyFont=ready');
       } catch {
-        legacyFailed = true;
+        legacyFailed = true; nativeBytes = null;
         if (!tmpAvailable || options.createFontFromLegacy) status('failed');
         console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic);
       } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
@@ -292,7 +319,7 @@
     }
     return { apply, snapshot, observe, forget, synchronize, original: pointer => exports.__uwt_font(pointer, 0), restore,
       applyLegacy, snapshotLegacy, observeLegacy, restoreLegacy, forgetLegacy,
-      dispose: () => { for (const pointer of [...observed.keys()]) forget(pointer); for (const pointer of [...legacyObserved.keys()]) forgetLegacy(pointer); restoreFallbacks(); disposed = true; bytes = null; if (handle) { exports.__uwt_unroot(handle); handle = 0; } if (legacyHandle) { exports.__uwt_unroot(legacyHandle); legacyHandle = 0; } } };
+      dispose: () => { for (const pointer of [...observed.keys()]) forget(pointer); for (const pointer of [...legacyObserved.keys()]) forgetLegacy(pointer); restoreFallbacks(); disposed = true; bytes = nativeBytes = null; if (handle) { exports.__uwt_unroot(handle); handle = 0; } if (legacyHandle) { exports.__uwt_unroot(legacyHandle); legacyHandle = 0; } } };
   }
   root.__UnityNativeFont = Object.freeze({ create });
 })(globalThis);

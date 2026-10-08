@@ -55,7 +55,8 @@
     sha256: 'adc902bca80fb14b6963d32196a7691a55d500614515f6c15a3b410153d2d162',
     importedFunctions: 612,
     runtimeExports: { memory: 'tk', __indirect_function_table: 'Sk', malloc: 'Nk', free: 'Ok' },
-    font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true },
+    font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true,
+      legacyNativeData: { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36, copy: true } },
     layout: { novel: { body: 68, name: 72 } },
     hooks: [
       { name: 'labelSet', function: 133895 }, { name: 'labelEnable', function: 134421 },
@@ -71,12 +72,14 @@
       __uwt_add_chars: 95755, __uwt_fallbacks: 4516, __uwt_dirty: 134570, __uwt_legacy_ctor: 116252,
       __uwt_legacy_has_char: 18055, __uwt_legacy_request_chars: 116142, __uwt_legacy_dynamic: 6059, __uwt_legacy_font: 184707,
       __uwt_legacy_set_font: 5804, __uwt_legacy_text: 2917, __uwt_text_data_raw: 6739, __uwt_type: 612,
-      __uwt_array: 628, __uwt_new_object: 615 },
+      __uwt_array: 628, __uwt_new_object: 615, __uwt_legacy_initialize_native: 61843,
+      __uwt_legacy_refresh_native: 10557, __uwt_legacy_reserve_native: 1131 },
   }, {
     sha256: '71962a64c4e0f31ff858f2b83346de116d7709c5fbada7dbce468b27997206c6',
     importedFunctions: 589,
     runtimeExports: { memory: 'Yj', __indirect_function_table: 'yk', malloc: 'mk', free: 'nk' },
-    font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyNamesArray: true, stringArrayTypeAddress: 5983396 },
+    font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyEmptyConstructor: true,
+      legacyNativeData: { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, copy: true } },
     layout: { message: { text: 8, name: 12, view: 24 } },
     hooks: [
       { name: 'legacySet', function: 49186 }, { name: 'legacyEnable', function: 49161 },
@@ -85,9 +88,10 @@
       { name: 'nameSet', function: 26293 },
     ],
     exports: { __uwt_string: 1212, __uwt_label_text: 5053, __uwt_root: 113391, __uwt_unroot: 113379,
-      __uwt_write_file: 113636, __uwt_legacy_ctor: 69089, __uwt_legacy_has_char: 28015, __uwt_legacy_dynamic: 69112,
+      __uwt_write_file: 113636, __uwt_legacy_ctor: 69090, __uwt_legacy_has_char: 28015, __uwt_legacy_dynamic: 69112,
       __uwt_legacy_font: 49188, __uwt_legacy_set_font: 7282, __uwt_legacy_text: 5053, __uwt_type: 589,
-      __uwt_array: 599, __uwt_new_object: 591 },
+      __uwt_array: 599, __uwt_new_object: 591, __uwt_legacy_initialize_native: 27948,
+      __uwt_legacy_refresh_native: 5970, __uwt_legacy_reserve_native: 1078 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
