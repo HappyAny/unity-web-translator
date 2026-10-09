@@ -96,6 +96,36 @@ await check('RichText keeps markup, numeric/Chinese/ruby strings; UTF-8 chunks d
   for (const text of ['中文 123', '名前|なまえ']) assert.equal((await f.engine.translate([{ id: '2', text }])).items[0].text, text);
   const text = 'あ'.repeat(400) + '😀'; const parts = chunks(text); assert.equal(parts.join(''), text); assert(parts.every(part => Buffer.byteLength(part) <= 450));
 });
+await check('Visible native separators retain their structure without filtering their surrounding words', async () => {
+  const f = fixture(); await f.engine.configure({ ...profile, uiEnabled: true });
+  const text = '<b>前の説明</b> | 次の説明 | HP | 100';
+  const item = (await f.engine.translate([{ id: 'native-ui', text, native: true, kind: 'ui' }])).items[0];
+  assert.equal(item.text, '<b>测试中文</b> | 测试中文 | HP | 100');
+  assert.equal(f.calls.length, 2); assert(!item.error);
+  assert.equal((await f.engine.translate([{ id: 'control', text: '名前|なまえ' }])).items[0].text, '名前|なまえ', 'Unclassified ruby or control syntax remains untouched');
+});
+await check('The model receives a complete long paragraph with its internal line breaks in one request', async () => {
+  const source = '長い説明です。'.repeat(130) + '\n\nこれは二行目の説明です。';
+  const f = fixture({ fetchImpl: async (_url, options) => {
+    const text = JSON.parse(options.body).messages[1].content;
+    assert.equal(text, source, 'The free-service byte limit must not fragment a model paragraph');
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '完整说明。\n\n这是第二段。' } }] }) };
+  } });
+  await f.engine.configure(profile);
+  const item = (await f.engine.translate([{ id: 'paragraph', text: source, native: true }])).items[0];
+  assert.equal(item.text, '完整说明。\n\n这是第二段。'); assert(!item.error);
+});
+await check('Old per-line and free-byte-chunk personal revisions remain effective in model paragraphs', async () => {
+  const f = fixture(); await f.engine.configure(profile);
+  const line = '二行目のテスト。', source = '一行目の説明です。\n' + line + '\n三行目の説明です。';
+  const oldChunk = chunks('長い説明です。'.repeat(130))[0];
+  f.cache.getOverride = async original => original === line ? '第二行的个人修订' : original === oldChunk ? '长段落的个人修订' : undefined;
+  const item = (await f.engine.translate([{ id: 'edited-line', text: source, native: true }])).items[0];
+  assert.equal(item.text, '测试中文\n第二行的个人修订\n测试中文'); assert(item.personal); assert.equal(f.calls.length, 2);
+  const long = (await f.engine.translate([{ id: 'edited-chunk', text: '長い説明です。'.repeat(130), native: true }])).items[0];
+  assert(long.text.startsWith('长段落的个人修订')); assert(long.personal);
+  assert(!f.calls.some(call => JSON.parse(call.options.body).messages[1].content === oldChunk), 'A revised old chunk never gets sent to the model again');
+});
 await check('Literal newline escapes render as line breaks without decoding other escapes or paths', () => {
   assert.equal(normalizeLineBreaks('第一行\\n第二行\\r\\n第三行¥n第四行￥n第五行\r\n第六行'), '第一行\n第二行\n第三行\n第四行\n第五行\n第六行');
   const preserved = 'C:\\new\\notes.txt \\\\network\\readme.txt \\t \\u4e00 1500¥ <b>文字</b> "引号"';

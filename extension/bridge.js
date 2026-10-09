@@ -12,7 +12,10 @@
     const send = result => window.dispatchEvent(new CustomEvent(responseEvent, { detail: JSON.stringify({ channel, direction: 'response', id: message.id, ...result }) }));
     if (active >= 8) { send({ ok: false, error: '扩展翻译忙，请稍后重试' }); return; }
     active++;
+    let timer;
+    const progress = () => { send({ progress: true }); timer = setTimeout(progress, 1000); };
+    if (message.action === 'translate') timer = setTimeout(progress, 1000);
     chrome.runtime.sendMessage({ action: message.action, payload: message.payload }).then(send,
-      () => send({ ok: false, error: '扩展连接已失效，请刷新网页' })).finally(() => active--);
+      () => send({ ok: false, error: '扩展连接已失效，请刷新网页' })).finally(() => { clearTimeout(timer); active--; });
   });
 })();

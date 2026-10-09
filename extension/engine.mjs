@@ -212,18 +212,50 @@ export class TranslationEngine {
     this.inflight.set(pendingKey, work);
     try { return await work; } finally { this.inflight.delete(pendingKey); }
   }
+  async modelParts(text, language, fresh) {
+    if (fresh || typeof this.cache.getOverride !== 'function') return [{ text }];
+    // Earlier caches exposed newline pieces and 450-byte chunks for personal editing.
+    // Preserve those revisions while combining all remaining text into longer requests.
+    const lines = await Promise.all(text.split(/([\r\n]+)/g).map(async line => {
+      if (!line.trim()) return [{ text: line }];
+      const revision = await this.personal(line, language);
+      if (typeof revision === 'string') return [{ text: line, revision }];
+      const pieces = chunks(line);
+      if (pieces.length < 2) return [{ text: line }];
+      return Promise.all(pieces.map(async text => ({ text, revision: await this.personal(text, language) })));
+    }));
+    const parts = [];
+    for (const part of lines.flat()) {
+      if (typeof part.revision === 'string' || !parts.length || typeof parts.at(-1).revision === 'string') parts.push({ ...part });
+      else parts.at(-1).text += part.text;
+    }
+    return parts;
+  }
   async richText(text, settings, token, fresh = false, reference = {}, native = false) {
     const personal = fresh ? undefined : await this.personal(text, settings.targetLanguage); if (typeof personal === 'string') return { text: normalizeLineBreaks(personal), cached: true, personal: true };
     const output = []; let cached = true, personalUsed = false;
-    for (const part of text.split(/(<[^>]*>|[\r\n]+)/g)) {
+    const separator = settings.provider === 'openai' ? (native ? /(<[^>]*>|\|)/g : /(<[^>]*>)/g) : (native ? /(<[^>]*>|[\r\n]+|\|)/g : /(<[^>]*>|[\r\n]+)/g);
+    for (const part of text.split(separator)) {
       const trimmed = part.trim();
-      if (!part || /^<[^>]*>$/.test(part) || /^[\r\n]+$/.test(part)) output.push(part);
+      if (!part || /^<[^>]*>$/.test(part) || !trimmed || (native && part === '|')) output.push(part);
       else {
         const revision = fresh ? undefined : await this.personal(part, settings.targetLanguage);
         if (typeof revision === 'string') { output.push(revision); personalUsed = true; }
         else if (settings.targetLanguage === 'zh-CN' && !(settings.provider === 'openai' && settings.customPrompt) && Object.hasOwn(this.glossary, trimmed)) output.push(part.replace(trimmed, this.glossary[trimmed]));
-        else if ((!KANA.test(part) && !(native && /[\u3400-\u9fff]/.test(part)) && !Object.hasOwn(this.glossary, trimmed)) || part.includes('|')) output.push(part);
-        else for (const chunk of chunks(part)) { const result = await this.plain(chunk, settings, token, fresh, reference); output.push(result.text); cached &&= result.cached; personalUsed ||= !!result.personal; }
+        else if ((!KANA.test(part) && !(native && /[\u3400-\u9fff]/.test(part)) && !Object.hasOwn(this.glossary, trimmed)) || (!native && part.includes('|'))) output.push(part);
+        else {
+          // Only the free service needs byte-sized chunks. Model requests retain a complete paragraph.
+          for (const planned of settings.provider === 'openai' ? await this.modelParts(part, settings.targetLanguage, fresh) : [{ text: part }]) {
+            if (typeof planned.revision === 'string') { output.push(normalizeLineBreaks(planned.revision)); personalUsed = true; continue; }
+            const value = planned.text, trimmed = value.trim();
+            if (!trimmed || (!KANA.test(value) && !(native && /[\u3400-\u9fff]/.test(value)) && !Object.hasOwn(this.glossary, trimmed))) { output.push(value); continue; }
+            output.push(value.slice(0, value.indexOf(trimmed)));
+            for (const chunk of settings.provider === 'openai' ? [trimmed] : chunks(trimmed)) {
+              const result = await this.plain(chunk, settings, token, fresh, reference); output.push(result.text); cached &&= result.cached; personalUsed ||= !!result.personal;
+            }
+            output.push(value.slice(value.indexOf(trimmed) + trimmed.length));
+          }
+        }
       }
     }
     return { text: normalizeLineBreaks(output.join('')), cached, ...(personalUsed ? { personal: true } : {}) };

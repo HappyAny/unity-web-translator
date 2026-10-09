@@ -8,13 +8,19 @@
   const pending = new Map(), queued = [], held = new Set(), bindings = new Map();
   let transportScheduled = false;
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
-  let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.15', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', lastCoverage = '', synchronizing, nativeLabels, disposeWasm;
+  const stats = { version: '0.2.16', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
   const signature = value => JSON.stringify([value.profileId, value.revision, value.providerSignature, value.paused,
     value.storyEnabled, value.uiEnabled, value.lookahead, value.historyEnabled, value.historyMaxEntries, value.resourceRules]);
+  function armTransport(entry) {
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(() => {
+      pending.delete(entry.id); entry.reject(new Error('Translation bridge timeout')); scheduleTransport();
+    }, Math.max(0, Math.min(entry.timeout, entry.deadline - Date.now())));
+  }
   function scheduleTransport() {
     if (disposed || transportScheduled) return;
     transportScheduled = true;
@@ -31,9 +37,8 @@
       const index = queued.findIndex(entry => entry.action !== 'translate' || translations < 4);
       if (index < 0) break;
       const entry = queued.splice(index, 1)[0];
-      entry.timer = setTimeout(() => {
-        pending.delete(entry.id); entry.reject(new Error('Translation bridge timeout')); scheduleTransport();
-      }, entry.timeout);
+      entry.deadline = Date.now() + (entry.action === 'translate' ? 15 * 60 * 1000 : entry.timeout);
+      armTransport(entry);
       pending.set(entry.id, entry);
       try {
         window.dispatchEvent(new CustomEvent(channel + '-request', { detail: JSON.stringify({ channel, direction: 'request', id: entry.id, action: entry.action, payload: entry.payload }) }));
@@ -56,6 +61,7 @@
     let message; try { message = JSON.parse(event.detail); } catch { return; }
     if (message?.channel !== channel || message.direction !== 'response') return;
     const entry = pending.get(message.id); if (!entry) return;
+    if (message.progress === true && entry.action === 'translate') { armTransport(entry); return; }
     pending.delete(message.id); clearTimeout(entry.timer);
     if (message.ok) entry.resolve(message.data); else entry.reject(new Error('Translation extension unavailable'));
     scheduleTransport();
@@ -225,7 +231,15 @@
     if (ready) recordDisplayed(binding, prepared); else render(binding);
     return () => { if (bindings.get(id) === binding) bindings.delete(id); binding.generation++; scheduleTransport(); };
   }
-  function report() { if (disposed) return; detectUnity(); transport('reportRuntime', { ...stats, configuredRules: rules.length, profileId: prefs.profileId || null }).catch(() => {}); }
+  function report() {
+    if (disposed) return; detectUnity();
+    const capture = nativeLabels?.diagnostics?.();
+    if (capture) {
+      const next = JSON.stringify({ ...capture, queuedRequests: queued.length, failures: stats.failures });
+      if (next !== lastCoverage) { lastCoverage = next; console.info('[Unity Web Translator] coverage=' + next); }
+    }
+    transport('reportRuntime', { ...stats, configuredRules: rules.length, profileId: prefs.profileId || null }).catch(() => {});
+  }
   function uninstall() {
     if (disposed) return; disposed = true; epoch++; history = [];
     clearInterval(syncTimer); clearInterval(reportTimer);
@@ -245,7 +259,9 @@
   if (WrappedXHR) window.XMLHttpRequest = WrappedXHR;
   const publicApi = Object.freeze({ version: stats.version, translate, bind: (id, text, apply, options) => bind(id, text, apply, options), resetHistory: () => { history = []; scene = ''; } });
   window.UnityWebTranslator = publicApi;
-  window.__UnityWebTranslator = Object.freeze({ version: stats.version, applyPreferences, synchronize, uninstall, diagnostics: () => ({ ...stats, paths: [...stats.paths], configuredRules: rules.length }) });
+  window.__UnityWebTranslator = Object.freeze({ version: stats.version, applyPreferences, synchronize, uninstall, diagnostics: () => ({ ...stats, paths: [...stats.paths], configuredRules: rules.length,
+    pendingTranslations: [...pending.values()].filter(entry => entry.action === 'translate').length, queuedRequests: queued.length,
+    ...(nativeLabels?.diagnostics ? { nativeCapture: nativeLabels.diagnostics() } : {}) }) });
   if (globalThis.__UnityWasmTools && globalThis.__UnityNativeLabels) {
     disposeWasm = globalThis.__UnityWasmTools.install({
       builds: globalThis.__UnityNativeLabels.builds,

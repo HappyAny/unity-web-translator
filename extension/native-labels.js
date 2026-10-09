@@ -9,6 +9,7 @@
     hooks: [
       { name: 'labelSet', function: 31008 }, { name: 'labelEnable', function: 31532 },
       { name: 'labelDisable', function: 31534 }, { name: 'labelDestroy', function: 31535 },
+      { name: 'labelProcessing', function: 31180 },
       { name: 'storyParse', function: 67659 }, { name: 'nameSet', function: 56345 },
       { name: 'scriptLoad', function: 113268 },
       { name: 'balloonStart', function: 66103 },
@@ -39,6 +40,7 @@
       { name: 'meshDestroy', function: 33136 },
       { name: 'legacySet', function: 139210 }, { name: 'legacyEnable', function: 139234 },
       { name: 'legacyDisable', function: 139235 }, { name: 'legacyDestroy', function: 92525 },
+      { name: 'legacyProcessing', function: 139241 },
     ],
     exports: { __uwt_string: 198601, __uwt_label_text: 34712, __uwt_root: 220084, __uwt_unroot: 220070,
       __uwt_type: 2388, __uwt_array: 2032, __uwt_write_file: 181784, __uwt_create_font: 33612,
@@ -65,6 +67,7 @@
       { name: 'meshDisable', function: 134709 }, { name: 'meshDestroy', function: 134708 },
       { name: 'legacySet', function: 184705 }, { name: 'legacyEnable', function: 73257 },
       { name: 'legacyDisable', function: 73256 }, { name: 'legacyDestroy', function: 43092 },
+      { name: 'legacyProcessing', function: 184685 },
       { name: 'novelWindow', function: 123757 }, { name: 'novelLength', function: 17997 },
     ],
     exports: { __uwt_string: 68674, __uwt_label_text: 133901, __uwt_root: 30849, __uwt_unroot: 175606,
@@ -87,6 +90,7 @@
     hooks: [
       { name: 'legacySet', function: 49186 }, { name: 'legacyEnable', function: 49161 },
       { name: 'legacyDisable', function: 49160 }, { name: 'legacyDestroy', function: 48977 },
+      { name: 'legacyProcessing', function: 49155 },
       { name: 'messageFrame', function: 26272 }, { name: 'messageText', function: 16537 },
       { name: 'nameSet', function: 26293 },
       { name: 'scriptInitialize', function: 27278 }, { name: 'scriptInstruction', function: 58481 },
@@ -102,14 +106,16 @@
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
     const revealable = new Set();
-    const warming = new Map();
+    const warming = new Map(), localized = new Map();
+    const skipped = { language: 0, length: 0, capacity: 0, unreadable: 0 };
+    let observed = 0;
     let scriptPlan, scriptCollector, prefetchGeneration = 0, prefetchBusy = false;
     let scene = 0, speaker = '', busy = false, replaying = false, disposed = false, messageContext, legacyContext;
     const memory = exports.memory;
     if (!(memory instanceof WebAssembly.Memory)) throw new Error('Native memory unavailable');
     for (const name of ['malloc', 'free', '__uwt_string', '__uwt_label_text', '__uwt_root', '__uwt_unroot']) if (typeof exports[name] !== 'function') throw new Error('Native string helpers unavailable');
     const key = text => text.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]{1,100}>/g, '').replace(/\r\n/g, '\n');
-    const japanese = text => /[\u3040-\u30ff\uff66-\uff9f]/.test(text);
+    const japanese = text => /[\u3040-\u30ff\uff66-\uff9f\u3400-\u9fff]/.test(text);
     function read(pointer, limit = 2000) {
       if (!pointer) return '';
       const view = new DataView(memory.buffer);
@@ -157,14 +163,20 @@
       if (disposed || busy) return;
       if (glyphs.has(pointer)) return;
       if (!options.active()) { drop(pointer); return; }
-      let text; try { text = read(value); } catch { return; }
-      if (!text.trim() || text.length > 2000) { drop(pointer); return; }
-      const context = knownContext || sources.get(key(text)), kind = context?.kind || 'ui';
-      if (!options.enabled(kind) || (!context && !japanese(text))) { drop(pointer); return; }
-      if (context?.original) { text = context.original; value = string(text); }
+      observed++;
+      let text; try { text = read(value); } catch (error) {
+        skipped[error.message === 'Managed string size limit' ? 'length' : 'unreadable']++; drop(pointer); return;
+      }
+      if (!text.trim()) { drop(pointer); return; }
       const current = slots.get(pointer);
+      if (current?.output === text && current.text !== text) { current.apply?.(current.output); return; }
+      const context = knownContext || sources.get(key(text)) || localized.get(key(text)), kind = context?.kind || 'ui';
+      if (!context && localized.has(key(text))) return;
+      if (!options.enabled(kind)) { drop(pointer); return; }
+      if (!context && !japanese(text)) { skipped.language++; drop(pointer); return; }
+      if (context?.original) { text = context.original; value = string(text); }
       if (current?.text === text) { if (current.output !== text) current.apply?.(current.output); return; }
-      drop(pointer); if (slots.size >= 256) return;
+      drop(pointer); if (slots.size >= 256) { skipped.capacity++; return; }
       const roots = []; let slot;
       try {
         roots.push(exports.__uwt_root(pointer, 0, 2), exports.__uwt_root(value, 0, 2));
@@ -184,6 +196,12 @@
             const previousRoot = slot.outputRoot;
             slot.output = output; slot.outputValue = next; slot.outputRoot = outputRoot;
             if (previousRoot && previousRoot !== outputRoot) exports.__uwt_unroot(previousRoot);
+            if (output !== text) {
+              if (localized.size >= 4096 && !localized.has(key(output))) localized.delete(localized.keys().next().value);
+              const normalized = key(output), previous = localized.get(normalized);
+              // Colliding outputs cannot identify an original after a pooled component is released.
+              localized.set(normalized, localized.has(normalized) && (!previous || previous.original !== text) ? null : { original: text, kind, speaker: context?.speaker || '' });
+            }
             original(pointer, next, 0);
             if (legacy) { if (output === text) font?.restoreLegacy(pointer, fontState); else font?.applyLegacy(pointer, output, fontState); }
             else { if (output === text) font?.restore(pointer, fontState); else font?.apply(pointer, output, fontState); }
@@ -317,9 +335,9 @@
         const result = original(pointer, info);
         if (busy || disposed || protectedLabel) return result;
         try {
-          const value = exports.__uwt_label_text(pointer, 0), text = read(value);
-          if (slots.get(pointer)?.output === text) return result;
-          font?.observe(pointer, text);
+          const value = exports.__uwt_label_text(pointer, 0);
+          if (slots.get(pointer)?.outputValue === value) return result;
+          try { font?.observe(pointer, read(value)); } catch { /* Font observation does not suppress capture. */ }
           bind(pointer, value, exports.__uwt_original_labelSet);
         } catch { /* Numeric formatting and array-based text keep their native result. */ }
         return result;
@@ -334,12 +352,28 @@
         const result = original(pointer, value, info);
         if (busy || disposed) return result;
         if (protectedLabel) return result;
-        try { font?.observeLegacy(pointer, read(value)); bind(pointer, value, original, 0, undefined, true); } catch { /* Preserve legacy text if unavailable. */ }
+        try { font?.observeLegacy(pointer, read(value)); } catch { /* Font observation does not suppress capture. */ }
+        try { bind(pointer, value, original, 0, undefined, true); } catch { /* Preserve legacy text if unavailable. */ }
         return result;
       },
       legacyEnable(original, pointer, info) {
         const result = original(pointer, info);
-        if (!revealable.has(pointer)) try { const value = exports.__uwt_legacy_text(pointer, 0); font?.observeLegacy(pointer, read(value)); bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true); } catch { /* Serialized text may not be initialized. */ }
+        if (!revealable.has(pointer)) try {
+          const value = exports.__uwt_legacy_text(pointer, 0);
+          try { font?.observeLegacy(pointer, read(value)); } catch { /* Font observation does not suppress capture. */ }
+          bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true);
+        } catch { /* Serialized text may not be initialized. */ }
+        return result;
+      },
+      legacyProcessing(original, pointer, mesh, info) {
+        const result = original(pointer, mesh, info);
+        if (busy || disposed || revealable.has(pointer)) return result;
+        try {
+          const value = exports.__uwt_legacy_text(pointer, 0);
+          if (slots.get(pointer)?.outputValue === value) return result;
+          try { font?.observeLegacy(pointer, read(value)); } catch { /* Font observation does not suppress capture. */ }
+          bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true);
+        } catch { /* Unknown renderers keep their native mesh. */ }
         return result;
       },
       legacyDisable(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
@@ -571,7 +605,8 @@
       translated.clear(); warming.clear(); prefetchGeneration++; prefetchBusy = false;
       if (scriptPlan) { scriptPlan.prepared.clear(); scriptPlan.ready = 0; }
       font?.synchronize(); warmUpcoming();
-    }, dispose: () => { reset(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size }) };
+    }, dispose: () => { reset(); localized.clear(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size,
+      observed, skipped: { ...skipped } }) };
   }
   root.__UnityNativeLabels = Object.freeze({ builds, create });
 })(globalThis);
