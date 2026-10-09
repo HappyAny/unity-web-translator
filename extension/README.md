@@ -1,6 +1,6 @@
 # Unity Web Translator / Unity Web翻译机
 
-Chrome / Edge extension for native Unity Web text through configured JSON resources, an integrated text bridge, or a fingerprint-matched component adapter.
+Chrome / Edge extension for native Unity Web text through configured JSON resources, an integrated text bridge, or a verified component adapter with automatic recognition of compatible updates.
 
 Installation: enable Developer mode in the browser's extension manager, choose **Load unpacked**, then select this `extension` directory.
 

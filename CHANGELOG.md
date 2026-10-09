@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.22
+
+- Automatically recognize compatible updates of the four supported native adapter families when the complete module hash changes.
+- Relocate function/type/import numbering, native export aliases and font metadata addresses using strong structural digests, call relationships, table anchors and validated type probes.
+- Preserve field offsets, ABI, control flow and static-pointer reuse; retain the untouched module on ambiguity, incompatible layouts or a disabled profile.
+- Allow argument-only story hooks to follow verified call sites while retaining the updated renderer implementation.
+- Add reproducible profile generation without distributing client binaries, synthetic update/fallback tests and a held-out client-update compilation check.
+- Keep the existing extension identity, shared settings, Profiles and caches. Live client rendering remains a separate verification step.
+
 ## 0.2.21
 
 - Add a fingerprint-gated adapter for an updated native text build, retaining its earlier supported build.

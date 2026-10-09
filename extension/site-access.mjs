@@ -11,7 +11,7 @@ export function contentScripts(origins) {
   if (!matches.length) return [];
   return [
     { id: SCRIPT_IDS[0], matches, js: ['bridge.js'], runAt: 'document_start', allFrames: true, world: 'ISOLATED', persistAcrossSessions: true },
-    { id: SCRIPT_IDS[1], matches, js: ['native-resources.js', 'native-xhr.js', 'native-wasm.js', 'native-font.js', 'native-labels.js', 'bootstrap.js', 'runtime.js'], runAt: 'document_start', allFrames: true, world: 'MAIN', persistAcrossSessions: true },
+    { id: SCRIPT_IDS[1], matches, js: ['native-resources.js', 'native-xhr.js', 'native-wasm.js', 'native-discovery.js', 'native-profiles.js', 'native-font.js', 'native-labels.js', 'bootstrap.js', 'runtime.js'], runAt: 'document_start', allFrames: true, world: 'MAIN', persistAcrossSessions: true },
   ];
 }
 export function createSiteAccess(api) {
@@ -41,7 +41,7 @@ export function createSiteAccess(api) {
     const enabled = new Set(await active()), frameIds = (await frames(tabId)).filter(frame => enabled.has(frame.origin)).map(frame => frame.frameId);
     if (!frameIds.length) return;
     await api.scripting.executeScript({ target: { tabId, frameIds }, files: ['bridge.js'], world: 'ISOLATED' });
-    await api.scripting.executeScript({ target: { tabId, frameIds }, files: ['native-resources.js', 'native-xhr.js', 'native-wasm.js', 'native-font.js', 'native-labels.js', 'bootstrap.js', 'runtime.js'], world: 'MAIN' });
+    await api.scripting.executeScript({ target: { tabId, frameIds }, files: ['native-resources.js', 'native-xhr.js', 'native-wasm.js', 'native-discovery.js', 'native-profiles.js', 'native-font.js', 'native-labels.js', 'bootstrap.js', 'runtime.js'], world: 'MAIN' });
   }
   const ready = serial(synchronize);
   return {

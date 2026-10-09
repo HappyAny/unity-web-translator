@@ -113,9 +113,14 @@
       const bytes = input instanceof ArrayBuffer ? new Uint8Array(input) : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
       if (bytes.length < 1024 || bytes.length > maxBytes) return nativeInstantiate.call(WebAssembly, input, imports);
       const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(value => value.toString(16).padStart(2, '0')).join('');
-      const spec = options.builds.find(build => build.sha256 === hash);
-      if (!spec) { options.onUnrecognized?.(hash, bytes.length); return nativeInstantiate.call(WebAssembly, input, imports); }
       if (!options.enabled()) return nativeInstantiate.call(WebAssembly, input, imports);
+      let spec = options.builds.find(build => build.sha256 === hash);
+      if (!spec && root.__UnityNativeDiscovery && options.profiles?.length) {
+        try { spec = await root.__UnityNativeDiscovery.resolve(bytes, options.profiles, options.builds, options.onDiscovery); }
+        catch { /* Unsupported structures retain their native behavior. */ }
+      }
+      if (!spec) { options.onUnrecognized?.(hash, bytes.length); return nativeInstantiate.call(WebAssembly, input, imports); }
+      if (disposed || !options.enabled()) return nativeInstantiate.call(WebAssembly, input, imports);
       try {
         const patched = rewrite(bytes, spec), result = await nativeInstantiate.call(WebAssembly, patched.bytes, imports);
         const handlers = options.createHandlers(result.instance.exports, spec);

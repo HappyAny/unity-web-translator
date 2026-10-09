@@ -24,7 +24,7 @@
       if (disposed || failed || !bytes) return false;
       const roots = [];
       try {
-        // This layout belongs to the fingerprint-gated 32-bit native adapter.
+        // This layout belongs to the validated native 32-bit native adapter.
         const typeAddress = options.byteArrayTypeAddress ?? 9899276;
         if (!Number.isInteger(typeAddress) || typeAddress < 8 || typeAddress + 4 > memory.buffer.byteLength) throw new Error('Native byte array layout unavailable');
         exports.__uwt_type(typeAddress);
@@ -132,7 +132,7 @@
         if (!next || !roots.at(-1) || next + 16 + (size + 1) * 4 > view.byteLength || view.getUint32(next + 12, true) !== size + 1) throw new Error('Native fallback array unavailable');
         values.push(asset);
         values.forEach((value, index) => view.setUint32(next + 16 + index * 4, value, true));
-        // Fingerprint-gated IL2CPP List<T> layout. Keep the original list and entries.
+        // Validated native IL2CPP List<T> layout. Keep the original list and entries.
         view.setUint32(list + 8, next, true); view.setInt32(list + 12, size + 1, true);
         view.setInt32(list + 16, view.getInt32(list + 16, true) + 1, true);
         fallbacks.set(source, { list, items, size, next, roots });

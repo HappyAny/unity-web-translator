@@ -9,7 +9,7 @@
   let transportScheduled = false;
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', lastCoverage = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.21', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.22', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   console.info('[Unity Web Translator] version=' + stats.version);
   let lastHostMessage; const reportedMessageErrors = new Set();
@@ -279,6 +279,8 @@
   if (globalThis.__UnityWasmTools && globalThis.__UnityNativeLabels) {
     disposeWasm = globalThis.__UnityWasmTools.install({
       builds: globalThis.__UnityNativeLabels.builds,
+      profiles: globalThis.__UnityNativeProfiles,
+      onDiscovery: value => console.info('[Unity Web Translator] discovery=' + JSON.stringify(value)),
       enabled: () => !disposed && !prefs.profileRequired && !!prefs.profileId,
       createHandlers(exports, build) {
         nativeLabels = globalThis.__UnityNativeLabels.create(exports, {
