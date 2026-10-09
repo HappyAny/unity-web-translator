@@ -174,7 +174,7 @@
       if (legacyAsset) return legacyAsset;
       if (tmpAvailable && !options.createFontFromLegacy) { if (!initialize()) return 0; }
       else if (!prepareFile()) return 0;
-      const address = options.legacyTypeAddress, roots = []; let phase = 'type', dynamic = false;
+      const address = options.legacyTypeAddress, roots = []; let phase = 'type', dynamic = false, metricSize, metricHeight;
       try {
         if (!Number.isInteger(address) || address < 8 || address + 4 > memory.buffer.byteLength) throw new Error('Legacy font layout unavailable');
         exports.__uwt_type(address);
@@ -234,7 +234,7 @@
           exports.__uwt_legacy_initialize_native(data);
           if (metrics) {
             phase = 'metrics'; view = new DataView(memory.buffer);
-            const size = view.getInt32(pointer + metrics.fontSize, true), height = view.getFloat32(pointer + metrics.lineHeight, true);
+            const size = metricSize = view.getInt32(pointer + metrics.fontSize, true), height = metricHeight = view.getFloat32(pointer + metrics.lineHeight, true);
             if (size < 1 || size > 500 || !Number.isFinite(height) || height < size * 0.5 || height > size * 4) throw new Error('Native font line height unavailable');
           }
           exports.__uwt_legacy_refresh_native(data);
@@ -253,7 +253,8 @@
       } catch {
         legacyFailed = true; nativeBytes = null;
         if (!tmpAvailable || options.createFontFromLegacy) status('failed');
-        console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic);
+        console.warn('[Unity Web Translator] legacyFont=failed phase=' + phase + ' dynamic=' + dynamic +
+          (phase === 'metrics' ? ' size=' + metricSize + ' lineHeight=' + metricHeight : ''));
       } finally { for (const root of roots) if (root) exports.__uwt_unroot(root); }
       return legacyAsset;
     }

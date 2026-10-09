@@ -33,7 +33,7 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
         if (layout.metrics) {
           current.setFloat32(21000 + layout.metrics.ascent, 1, true);
           current.setFloat32(20000 + layout.metrics.lineHeight, 1, true);
-          current.setInt32(20000 + layout.metrics.fontSize, 48, true);
+          current.setInt32(20000 + layout.metrics.fontSize, names ? 48 : 0, true);
         }
         if (!copy) new Uint8Array(memory.buffer, 22000, source.length).set(source);
       }
@@ -109,12 +109,23 @@ for (const preferFallback of [false, true]) {
 }
 {
   const config = globalThis.__UnityNativeLabels.builds[2].font;
-  const f = fixture({ native: true, copy: true, tmp: true, layout: config.legacyNativeData, originalCoverage: true, preferFallback: config.legacyPreferFallback });
+  assert.equal(config.legacyNamesArray, true, 'The matched custom renderer must construct its fallback with an explicit native size');
+  assert.equal(config.stringArrayTypeAddress, 8392052);
+  assert.equal(globalThis.__UnityNativeLabels.builds[2].exports.__uwt_legacy_ctor, 27465);
+  const f = fixture({ native: true, copy: true, tmp: true, names: config.legacyNamesArray, layout: config.legacyNativeData, originalCoverage: true, preferFallback: config.legacyPreferFallback });
   await new Promise(resolve => setImmediate(resolve));
   f.adapter.applyLegacy(200, '（对不起，生命的堡垒崩塌了。）', { font: 42 });
   assert.equal(f.font, 900, 'A matched custom renderer must use the CJK face even if its original font advertises coverage');
   assert.equal(f.lineHeight, 64, 'The matched custom renderer needs face metrics recomputed before replacing its font');
   f.adapter.restoreLegacy(200, { font: 42 }); assert.equal(f.font, 42);
+  f.adapter.dispose(); assert.equal(f.roots.size, 0);
+}
+{
+  const layout = globalThis.__UnityNativeLabels.builds[2].font.legacyNativeData;
+  const f = fixture({ native: true, copy: true, tmp: true, layout }); await new Promise(resolve => setImmediate(resolve));
+  f.adapter.applyLegacy(200, '完整显示正文', { font: 42 });
+  assert.equal(f.font, 42, 'A path-only constructor with zero native size must not replace the original font');
+  assert.equal(f.states.at(-1), 'failed'); assert.equal(f.initialized, 1);
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false }, { native: true, nativeLength: 999 },

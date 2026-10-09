@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.20
+
+- Construct the matched custom renderer's bundled CJK fallback with an explicit native font size before loading its owned font data and recomputing face metrics.
+- Replace the path-only constructor that could leave unusable native metrics and prevent the fallback from being applied.
+- Retain current-command reveal mapping and cached future translations; font initialization does not advance native clicks or commands.
+- Add zero-size constructor rejection and explicit-size fallback regressions. Failed metric diagnostics include only font size and line height.
+
 ## 0.2.19
 
 - Preserve negative native novel view lengths, which mean show-all; translating them into zero had hidden dialogue in instant-display mode.
