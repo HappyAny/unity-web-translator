@@ -134,6 +134,7 @@
       const slot = slots.get(pointer); if (!slot) return;
       slots.delete(pointer); balloons.delete(pointer); if (slot.legacy) revealable.delete(pointer); slot.release?.();
       if (slot.fontState) try { if (slot.legacy) font?.restoreLegacy(pointer, slot.fontState); else font?.restore(pointer, slot.fontState); } catch { /* Component may already be disposing. */ }
+      if (slot.outputRoot) exports.__uwt_unroot(slot.outputRoot);
       for (const handle of slot.roots) if (handle) exports.__uwt_unroot(handle);
     }
     function dropWindow(pointer) {
@@ -159,7 +160,7 @@
       const current = slots.get(pointer);
       if (current?.text === text) { if (current.output !== text) current.apply?.(current.output); return; }
       drop(pointer); if (slots.size >= 256) return;
-      const roots = [];
+      const roots = []; let slot;
       try {
         roots.push(exports.__uwt_root(pointer, 0, 2), exports.__uwt_root(value, 0, 2));
         if (owner) roots.push(exports.__uwt_root(owner, 0, 2));
@@ -167,26 +168,44 @@
         if (originalFont) roots.push(exports.__uwt_root(originalFont, 0, 2));
         if (fontState?.material) roots.push(exports.__uwt_root(fontState.material, 0, 2));
         if (roots.some(handle => !handle)) throw new Error('Native root unavailable');
-        const slot = { text, roots, fontState, legacy, output: text, release: null }; slots.set(pointer, slot);
+        slot = { text, kind, roots, fontState, legacy, output: text, outputValue: value, outputRoot: 0, release: null }; slots.set(pointer, slot);
         slot.apply = output => {
           if (slots.get(pointer) !== slot || disposed) return;
-          busy = true;
-          let temporary = 0;
+          const previousBusy = busy; busy = true;
           try {
-            slot.output = output;
-            const next = output === text ? value : string(output);
-            if (output !== text) { temporary = exports.__uwt_root(next, 0, 2); if (!temporary) return; }
+            let next = value, outputRoot = 0;
+            if (output === slot.output) { next = slot.outputValue; outputRoot = slot.outputRoot; }
+            else if (output !== text) { next = string(output); outputRoot = exports.__uwt_root(next, 0, 2); if (!outputRoot) return; }
+            const previousRoot = slot.outputRoot;
+            slot.output = output; slot.outputValue = next; slot.outputRoot = outputRoot;
+            if (previousRoot && previousRoot !== outputRoot) exports.__uwt_unroot(previousRoot);
             original(pointer, next, 0);
             if (legacy) { if (output === text) font?.restoreLegacy(pointer, fontState); else font?.applyLegacy(pointer, output, fontState); }
             else { if (output === text) font?.restore(pointer, fontState); else font?.apply(pointer, output, fontState); }
           }
-          finally { if (temporary) exports.__uwt_unroot(temporary); busy = false; }
+          finally { busy = previousBusy; }
         };
         slot.release = options.bind('native-' + pointer, text, slot.apply, { kind, speaker: context?.speaker || '', scene: 'native-' + scene });
         options.onBound?.(kind);
       } catch {
-        slots.delete(pointer); for (const handle of roots) if (handle) exports.__uwt_unroot(handle);
+        if (slot) { if (slots.get(pointer) === slot) drop(pointer); }
+        else for (const handle of roots) if (handle) exports.__uwt_unroot(handle);
       }
+    }
+    function stableText(pointer, value) {
+      if (busy || disposed || (!revealable.has(pointer) && !balloons.has(pointer))) return value;
+      const slot = slots.get(pointer); if (!slot) return value;
+      try {
+        const text = read(value, 10000);
+        if (!text.trim()) { drop(pointer); return value; }
+        if (!options.active() || !options.enabled(slot.kind) || slot.output === slot.text) return value;
+        const normalized = key(text);
+        // Advance and reveal updates may repeat the source outside the full-message callback.
+        // Substitute before the native setter; replaying the renderer would restart its timing.
+        if (normalized && (key(slot.text).startsWith(normalized) || key(slot.output).startsWith(normalized))) return slot.outputValue;
+        drop(pointer);
+      } catch { /* Unknown native input retains its original behavior. */ }
+      return value;
     }
     function remember(text, kind, name = speaker) {
       register(text, kind, name);
@@ -239,15 +258,22 @@
     }
     const handlers = {
       labelSet(original, pointer, value, info) {
+        const protectedLabel = balloons.has(pointer) || revealable.has(pointer);
+        value = stableText(pointer, value);
         const result = original(pointer, value, info);
         try { font?.observe(pointer, read(value)); } catch { /* Font observation never blocks native text. */ }
-        if (balloons.has(pointer) || revealable.has(pointer)) return result;
+        if (protectedLabel) return result;
         try { bind(pointer, value, original); } catch { /* Preserve the native setter's result. */ }
         return result;
       },
       labelProcessing(original, pointer, info) {
+        const protectedLabel = balloons.has(pointer) || revealable.has(pointer);
+        if (protectedLabel) try {
+          const value = exports.__uwt_label_text(pointer, 0), next = stableText(pointer, value);
+          if (next !== value) exports.__uwt_original_labelSet(pointer, next, 0);
+        } catch { /* Unavailable fields retain native processing. */ }
         const result = original(pointer, info);
-        if (busy || disposed || revealable.has(pointer)) return result;
+        if (busy || disposed || protectedLabel) return result;
         try {
           const value = exports.__uwt_label_text(pointer, 0), text = read(value);
           if (slots.get(pointer)?.output === text) return result;
@@ -261,9 +287,11 @@
           const context = legacyContext?.labels ? legacyContext.labels.get(pointer) : legacyContext;
           if (context) { font?.observeLegacy(pointer, read(context.value)); return wholeLegacy(original, pointer, value, info, context); }
         } catch { /* Preserve native text if a whole-message context is unavailable. */ }
+        const protectedLabel = revealable.has(pointer);
+        value = stableText(pointer, value);
         const result = original(pointer, value, info);
         if (busy || disposed) return result;
-        if (revealable.has(pointer)) { try { if (!read(value).trim()) drop(pointer); } catch { /* Retain native cleanup. */ } return result; }
+        if (protectedLabel) return result;
         try { font?.observeLegacy(pointer, read(value)); bind(pointer, value, original, 0, undefined, true); } catch { /* Preserve legacy text if unavailable. */ }
         return result;
       },

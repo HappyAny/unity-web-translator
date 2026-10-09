@@ -146,6 +146,10 @@ assert.equal(balloonCalls, 2, 'Reapplying an unchanged translation does not rest
 assert.equal(balloonCompletions, 1);
 adapter.handlers.labelSet(exports.__uwt_original_labelSet, 600, managed('这'), 0);
 assert.equal(bindings.get('native-600'), oldBalloon, 'Per-frame prefixes cannot replace the full-sentence binding');
+assert.equal(read(labels.get(600)), '这是第一句话。', 'A translated balloon cannot restart at a shorter prefix');
+adapter.handlers.labelSet(exports.__uwt_original_labelSet, 600, first, 0);
+assert.equal(read(labels.get(600)), '这是第一句话。', 'Advance-time source writes retain the completed balloon');
+assert.equal(balloonCalls, 2); assert.equal(balloonCompletions, 1, 'Low-level writes do not restart or complete the balloon again');
 adapter.handlers.balloonStart(balloon, 500, next, 2, 1, 0);
 oldBalloon.apply('迟到的译文'); assert.equal(balloonSource, read(next), 'A previous sentence cannot rewrite the current balloon');
 assert.equal(balloonCompletions, 1, 'A stale result cannot complete a newer balloon');

@@ -44,11 +44,24 @@ assert.equal(entry.options.kind, 'story'); assert.equal(entry.options.speaker, '
 progress = 0.65; entry.apply('这是第一句完整对白。');
 assert.equal(read(labels.get(1000)), '这是第一句完整对白。');
 assert.equal(progress, 0.65, 'Translated text retains native reveal progress'); assert.equal(meshCalls, 1);
+const repeatWrites = [], beforeCalls = calls;
+const repeatSet = (pointer, value, info) => { repeatWrites.push(read(value)); labels.set(pointer, value); assert.equal(info, 17); return 83; };
+assert.equal(adapter.handlers.labelSet(repeatSet, 1000, first, 17), 83);
+adapter.handlers.labelSet(repeatSet, 1000, managed('これは'), 17);
+adapter.handlers.labelSet(repeatSet, 1000, managed('这是'), 17);
+assert.deepEqual(repeatWrites, Array(3).fill('这是第一句完整对白。'), 'Source and translated prefixes cannot replace an already displayed translation');
+labels.set(1000, first);
+assert.equal(adapter.handlers.labelProcessing(pointer => {
+  assert.equal(read(labels.get(pointer)), '这是第一句完整对白。', 'Direct assignments are repaired before native text processing'); return 97;
+}, 1000, 0), 97);
+assert.equal(calls, beforeCalls); assert.equal(meshCalls, 1); assert.equal(progress, 0.65, 'Protected setter writes never replay the reveal renderer');
 adapter.handlers.revealText(nativeRender, 1000, first, 0);
 assert.equal(read(labels.get(1000)), '这是第一句完整对白。', 'Repeated native assignments retain a prepared translation');
 progress = 1; entry.apply(read(first));
 assert.equal(progress, 1, 'Pause restores the complete original sentence');
 const next = managed('次の会話です。');
+adapter.handlers.labelSet(exports.__uwt_original_labelSet, 1000, first, 0);
+assert.equal(read(labels.get(1000)), read(first), 'Source restoration disables the translated setter guard');
 adapter.handlers.revealText(nativeRender, 1000, next, 0);
 entry.apply('迟到的旧译文'); assert.equal(read(labels.get(1000)), read(next));
 const nextBinding = bindings.get('native-1000'); uiEnabled = true;
@@ -56,6 +69,10 @@ adapter.handlers.labelSet(exports.__uwt_original_labelSet, 1000, managed('次の
 adapter.handlers.labelProcessing(() => {}, 1000, 0);
 assert.equal(bindings.get('native-1000'), nextBinding, 'Changing a full sentence retains the protected reveal component, even with UI translation enabled');
 assert.equal(nextBinding.original, read(next));
+nextBinding.apply('下一句完整中文。');
+adapter.handlers.labelSet(exports.__uwt_original_labelSet, 1000, managed(''), 0);
+nextBinding.apply('迟到的译文');
+assert.equal(read(labels.get(1000)), ''); assert.equal(bindings.size, 0); assert.equal(roots.size, 0, 'Empty text clears the protected translation');
 adapter.handlers.labelDisable(() => {}, 1000, 0); assert.equal(roots.size, 0); assert.equal(bindings.size, 0);
 storyEnabled = false; uiEnabled = true;
 adapter.handlers.revealText(nativeRender, 1000, first, 0);

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.13
+
+- Keep a displayed dialogue translation when advance/reveal callbacks repeat the current source or a shorter prefix through native text setters.
+- Repair protected direct text assignments before TMP processing, without replaying dialogue, voice, command or reveal callbacks.
+- Reuse one rooted managed output string per binding; release it on replacement, source restoration, clear and disposal.
+- Preserve native new-line, pause and story-switch behavior, and reject stale results after a clear or line change.
+- Add regression coverage for pre-setter substitution, native return values, reveal progress and root lifetime.
+
 ## 0.2.6
 
 - Add fingerprint-checked legacy Unity UI.Text bindings for tutorials, menus and status labels.
