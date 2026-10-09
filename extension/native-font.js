@@ -201,6 +201,8 @@
           view.setUint32(names + 16, path, true);
           exports.__uwt_legacy_ctor(value, names, 48, 0);
         } else exports.__uwt_legacy_ctor(value, path, 0);
+        phase = 'material';
+        if (typeof exports.__uwt_legacy_material === 'function' && !exports.__uwt_legacy_material(value, 0)) throw new Error('Legacy font material unavailable');
         const layout = options.legacyNativeData;
         if (layout) {
           phase = 'native-data';

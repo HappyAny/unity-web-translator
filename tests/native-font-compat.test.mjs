@@ -4,7 +4,7 @@ import '../extension/native-font.js';
 const classicLayout = { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36 };
 const recentLayout = { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84 };
 function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, native = false, nativeLength = 1000,
-  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false, originalCoverage = false, preferFallback = false } = {}) {
+  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false, originalCoverage = false, preferFallback = false, requireMaterial = false, material = true } = {}) {
   const memory = new WebAssembly.Memory({ initial: 4 }), strings = new Map(), roots = new Set(), states = [];
   let cursor = 1000, handle = 1, font = 42, writes = 0, constructors = 0, assets = 0, initialized = 0, reserves = 0;
   const source = new Uint8Array(1000); new DataView(source.buffer).setUint32(0, 0x00010000, false); source[100] = 99;
@@ -55,6 +55,7 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
     },
     __uwt_font: () => font, __uwt_set_font(_pointer, value) { font = value; }, __uwt_add_chars() {},
   });
+  if (requireMaterial) exports.__uwt_legacy_material = value => { assert.equal(value, 900); return material ? 902 : 0; };
   const adapter = globalThis.__UnityNativeFont.create(exports, {
     byteArrayTypeAddress: 100, legacyTypeAddress: 104, stringArrayTypeAddress: 108, legacyNamesArray: names, legacyEmptyConstructor: empty, legacyPreferFallback: preferFallback, createFontFromLegacy: tmp,
     ...(native ? { legacyNativeData: { ...layout, copy } } : {}),
@@ -78,14 +79,14 @@ tmp.adapter.dispose(); assert.equal(tmp.roots.size, 0); assert.equal(tmp.states.
 const native = fixture({ native: true, tmp: true }); await new Promise(resolve => setImmediate(resolve));
 native.adapter.apply(200, '字体', { font: 42 }); assert.equal(native.font, 901); assert.equal(native.initialized, 1);
 native.adapter.dispose(); assert.equal(native.roots.size, 0);
-for (const config of [{ tmp: true, layout: classicLayout }, { empty: true, layout: recentLayout, grow: true }]) {
+for (const config of [{ tmp: true, layout: classicLayout }, { names: true, requireMaterial: true, layout: recentLayout, grow: true }]) {
   const f = fixture({ ...config, native: true, copy: true }); await new Promise(resolve => setImmediate(resolve));
   if (config.tmp) f.adapter.apply(200, '动态字体', { font: 42 }); else f.adapter.applyLegacy(200, '动态字体', { font: 42 });
   assert.equal(f.font, config.tmp ? 901 : 900); assert.equal(f.initialized, 1); assert.equal(f.reserves, 1);
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const preferFallback of [false, true]) {
-  const f = fixture({ native: true, copy: true, empty: true, layout: recentLayout, originalCoverage: true, preferFallback });
+  const f = fixture({ native: true, copy: true, names: true, requireMaterial: true, layout: recentLayout, originalCoverage: true, preferFallback });
   await new Promise(resolve => setImmediate(resolve));
   f.adapter.applyLegacy(200, '完整显示游戏设置', { font: 42 });
   assert.equal(f.font, preferFallback ? 900 : 42, 'The matched atlas override must not trust a false-positive coverage report');
@@ -95,7 +96,8 @@ for (const preferFallback of [false, true]) {
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false }, { native: true, nativeLength: 999 },
-  { native: true, copy: true, empty: true, layout: recentLayout, badReserve: true }]) {
+  { native: true, copy: true, names: true, layout: recentLayout, badReserve: true },
+  { native: true, copy: true, empty: true, layout: recentLayout, requireMaterial: true, material: false }]) {
   const f = fixture(config); await new Promise(resolve => setImmediate(resolve));
   f.adapter.applyLegacy(200, '译文', { font: 42 }); assert.equal(f.font, 42, 'An unavailable constructor/type/glyph preserves the native font');
   assert.equal(f.roots.size, 2, 'A failed font probe retains only the observed label and original font');
