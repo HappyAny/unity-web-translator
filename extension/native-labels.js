@@ -80,7 +80,8 @@
     runtimeExports: { memory: 'Yj', __indirect_function_table: 'yk', malloc: 'mk', free: 'nk' },
     font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyNamesArray: true,
       stringArrayTypeAddress: 5983396, legacyPreferFallback: true,
-      legacyNativeData: { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, copy: true } },
+      legacyNativeData: { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, copy: true,
+        metrics: { ascent: 228, lineHeight: 24, fontSize: 28 } } },
     layout: { message: { text: 8, name: 12, view: 24 } },
     hooks: [
       { name: 'legacySet', function: 49186 }, { name: 'legacyEnable', function: 49161 },

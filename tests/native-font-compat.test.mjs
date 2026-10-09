@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import '../extension/native-font.js';
 
 const classicLayout = { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36 };
-const recentLayout = { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84 };
+const recentLayout = { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, metrics: { ascent: 228, lineHeight: 24, fontSize: 28 } };
 function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, native = false, nativeLength = 1000,
-  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false, originalCoverage = false, preferFallback = false, requireMaterial = false, material = true } = {}) {
+  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false, originalCoverage = false, preferFallback = false, requireMaterial = false, material = true, metricHeight = 64 } = {}) {
   const memory = new WebAssembly.Memory({ initial: 4 }), strings = new Map(), roots = new Set(), states = [];
   let cursor = 1000, handle = 1, font = 42, writes = 0, constructors = 0, assets = 0, initialized = 0, reserves = 0;
   const source = new Uint8Array(1000); new DataView(source.buffer).setUint32(0, 0x00010000, false); source[100] = 99;
@@ -29,6 +29,11 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
         current.setUint32(21000 + layout.buffer, copy ? 0 : 22000, true);
         current.setUint32(21000 + layout.length, copy ? 0 : nativeLength, true);
         current.setUint32(21000 + layout.capacity, copy ? 0 : nativeLength * 2 + 1, true);
+        if (layout.metrics) {
+          current.setFloat32(21000 + layout.metrics.ascent, 1, true);
+          current.setFloat32(20000 + layout.metrics.lineHeight, 1, true);
+          current.setInt32(20000 + layout.metrics.fontSize, 48, true);
+        }
         if (!copy) new Uint8Array(memory.buffer, 22000, source.length).set(source);
       }
     },
@@ -45,6 +50,11 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
       const current = new DataView(memory.buffer); assert.equal(data, 21000); assert.equal(current.getInt32(data + layout.dynamic, true), -2);
       const buffer = current.getUint32(data + layout.buffer, true); assert.equal(current.getUint32(data + layout.length, true), source.length);
       assert.deepEqual(new Uint8Array(memory.buffer, buffer, source.length), source); initialized++;
+      if (layout.metrics) {
+        assert.equal(current.getFloat32(data + layout.metrics.ascent, true), 0, 'Cached constructor metrics must be invalidated after loading the face');
+        current.setFloat32(data + layout.metrics.ascent, 56, true);
+        current.setFloat32(20000 + layout.metrics.lineHeight, metricHeight, true);
+      }
     },
     __uwt_legacy_refresh_native(data) { assert.equal(data, 21000); assert.equal(initialized, 1); },
     __uwt_legacy_font: () => font, __uwt_legacy_set_font(_pointer, value) { font = value; },
@@ -62,7 +72,7 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
     string(text) { const pointer = exports.malloc(text.length * 2 + 12); strings.set(pointer, text); return pointer; },
     load: async () => source, status: state => states.push(state),
   });
-  return { adapter, roots, states, get font() { return font; }, get writes() { return writes; }, get constructors() { return constructors; }, get assets() { return assets; }, get initialized() { return initialized; }, get reserves() { return reserves; } };
+  return { adapter, roots, states, get font() { return font; }, get writes() { return writes; }, get constructors() { return constructors; }, get assets() { return assets; }, get initialized() { return initialized; }, get reserves() { return reserves; }, get lineHeight() { return new DataView(memory.buffer).getFloat32(20000 + (layout.metrics?.lineHeight || 24), true); } };
 }
 for (const names of [false, true]) {
   const f = fixture({ names }); await new Promise(resolve => setImmediate(resolve));
@@ -83,6 +93,7 @@ for (const config of [{ tmp: true, layout: classicLayout }, { names: true, requi
   const f = fixture({ ...config, native: true, copy: true }); await new Promise(resolve => setImmediate(resolve));
   if (config.tmp) f.adapter.apply(200, '动态字体', { font: 42 }); else f.adapter.applyLegacy(200, '动态字体', { font: 42 });
   assert.equal(f.font, config.tmp ? 901 : 900); assert.equal(f.initialized, 1); assert.equal(f.reserves, 1);
+  if (config.layout.metrics) assert.equal(f.lineHeight, 64, 'Multiline text must use recomputed native line height');
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const preferFallback of [false, true]) {
@@ -103,6 +114,13 @@ for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false
   assert.equal(f.roots.size, 2, 'A failed font probe retains only the observed label and original font');
   assert.equal(f.states.at(-1), 'failed', 'Legacy-only failures appear in the font diagnostics');
   assert.equal(f.initialized, 0, 'Unverified native bytes never reach the initializer');
+  f.adapter.dispose(); assert.equal(f.roots.size, 0);
+}
+for (const metricHeight of [0, 1, NaN, 1000]) {
+  const f = fixture({ native: true, copy: true, names: true, layout: recentLayout, metricHeight }); await new Promise(resolve => setImmediate(resolve));
+  f.adapter.applyLegacy(200, '第一行\n第二行', { font: 42 });
+  assert.equal(f.font, 42, 'Invalid native line height preserves the original font');
+  assert.equal(f.states.at(-1), 'failed'); assert.equal(f.initialized, 1);
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 console.log('Native font compatibility: constructors, owned native byte vectors, memory growth, older TMP creation, rejection and root disposal passed.');

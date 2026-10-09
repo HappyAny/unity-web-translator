@@ -225,7 +225,18 @@
           const buffer = view.getUint32(data + layout.buffer, true), length = view.getUint32(data + layout.length, true);
           if (!buffer || length !== fileLength || buffer + length > view.byteLength || view.getUint32(buffer, false) !== 0x00010000) throw new Error('Native fallback bytes unavailable');
           view.setInt32(data + layout.dynamic, -2, true);
+          const metrics = layout.metrics;
+          if (metrics) {
+            if (data + metrics.ascent + 4 > view.byteLength || pointer + Math.max(metrics.lineHeight, metrics.fontSize) + 4 > view.byteLength) throw new Error('Native font metrics unavailable');
+            // Invalidate constructor metrics so the owned font recomputes them from the loaded face.
+            view.setFloat32(data + metrics.ascent, 0, true);
+          }
           exports.__uwt_legacy_initialize_native(data);
+          if (metrics) {
+            phase = 'metrics'; view = new DataView(memory.buffer);
+            const size = view.getInt32(pointer + metrics.fontSize, true), height = view.getFloat32(pointer + metrics.lineHeight, true);
+            if (size < 1 || size > 500 || !Number.isFinite(height) || height < size * 0.5 || height > size * 4) throw new Error('Native font line height unavailable');
+          }
           exports.__uwt_legacy_refresh_native(data);
         }
         dynamic = !!exports.__uwt_legacy_dynamic?.(value, 0);
