@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.18
+
+- Bind matched novel windows to the current native text command instead of translating an entire page of upcoming click segments.
+- Map translated character visibility to the engine's reveal progress using its own text parser; retain completed segments, clicks, voice and command timing.
+- Prefetch the configured number of complete future commands within a verified page without displaying them early or adding them to reference history.
+- Prefer the bundled CJK font in the matched custom text renderer and invalidate its glyph layout after writeback; restore the source font when paused.
+- Keep unverified page boundaries in their original masked form, reject stale segment results, and release translated page roots on replacement and disposal.
+- Add segment, lookahead, font, Profile revision and cleanup regressions. Validate the added entry and helper exports against the original WASM; actual font layout remains subject to client verification.
+
 ## 0.2.13
 
 - Keep a displayed dialogue translation when advance/reveal callbacks repeat the current source or a shorter prefix through native text setters.

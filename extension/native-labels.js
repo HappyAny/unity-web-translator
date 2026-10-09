@@ -65,9 +65,9 @@
     sha256: 'adc902bca80fb14b6963d32196a7691a55d500614515f6c15a3b410153d2d162',
     importedFunctions: 612,
     runtimeExports: { memory: 'tk', __indirect_function_table: 'Sk', malloc: 'Nk', free: 'Ok' },
-    font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true,
+    font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true, legacyPreferFallback: true,
       legacyNativeData: { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36, copy: true } },
-    layout: { novel: { body: 68, name: 72 } },
+    layout: { novel: { body: 68, name: 72, textType: 8412656, pageData: 76, pageCommand: 84, pageMax: 104, pageCommands: 12, commandLineBreak: 29 } },
     hooks: [
       { name: 'labelSet', function: 133895 }, { name: 'labelEnable', function: 134421 },
       { name: 'labelDisable', function: 134413 }, { name: 'labelDestroy', function: 134408 },
@@ -78,12 +78,15 @@
       { name: 'legacyDisable', function: 73256 }, { name: 'legacyDestroy', function: 43092 },
       { name: 'legacyProcessing', function: 184685 },
       { name: 'novelWindow', function: 123757 }, { name: 'novelLength', function: 17997 },
+      { name: 'novelDrawing', function: 115410 },
     ],
     exports: { __uwt_string: 68674, __uwt_label_text: 133901, __uwt_root: 30849, __uwt_unroot: 175606,
       __uwt_write_file: 31346, __uwt_create_font: 43274, __uwt_font: 2999, __uwt_set_font: 29135,
       __uwt_add_chars: 95755, __uwt_fallbacks: 4516, __uwt_dirty: 134570, __uwt_legacy_ctor: 116252,
       __uwt_legacy_has_char: 18055, __uwt_legacy_request_chars: 116142, __uwt_legacy_dynamic: 6059, __uwt_legacy_font: 184707,
       __uwt_legacy_set_font: 5804, __uwt_legacy_text: 2917, __uwt_text_data_raw: 6739, __uwt_type: 612,
+      __uwt_novel_engine: 3844, __uwt_engine_page: 1287, __uwt_command_text: 8431,
+      __uwt_text_data_plain: 7583, __uwt_text_data_length: 10191, __uwt_text_data_ctor: 6048, __uwt_novel_dirty: 115402,
       __uwt_array: 628, __uwt_new_object: 615, __uwt_legacy_initialize_native: 61843,
       __uwt_legacy_refresh_native: 10557, __uwt_legacy_reserve_native: 1131 },
   }, {
@@ -114,9 +117,10 @@
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
-    const revealable = new Set();
+    const revealable = new Set(), novels = new Map(), novelLabels = new Set();
     const warming = new Map(), localized = new Map();
     const skipped = { language: 0, length: 0, capacity: 0, unreadable: 0 };
+    const novelCapture = { commands: 0, unverified: 0, last: null };
     let observed = 0;
     let scriptPlan, scriptCollector, prefetchGeneration = 0, prefetchBusy = false;
     let scene = 0, speaker = '', busy = false, replaying = false, disposed = false, messageContext, legacyContext;
@@ -155,6 +159,7 @@
       slots.delete(pointer); balloons.delete(pointer); if (slot.legacy) revealable.delete(pointer); slot.release?.();
       if (slot.fontState) try { if (slot.legacy) font?.restoreLegacy(pointer, slot.fontState); else font?.restore(pointer, slot.fontState); } catch { /* Component may already be disposing. */ }
       if (slot.outputRoot) exports.__uwt_unroot(slot.outputRoot);
+      if (slot.novel?.renderRoot) { exports.__uwt_unroot(slot.novel.renderRoot); slot.novel.renderRoot = slot.novel.renderValue = 0; }
       for (const handle of slot.roots) if (handle) exports.__uwt_unroot(handle);
     }
     function dropWindow(pointer) {
@@ -190,11 +195,12 @@
       try {
         roots.push(exports.__uwt_root(pointer, 0, 2), exports.__uwt_root(value, 0, 2));
         if (owner) roots.push(exports.__uwt_root(owner, 0, 2));
+        if (knownContext?.novel?.fullValue) roots.push(exports.__uwt_root(knownContext.novel.fullValue, 0, 2));
         const fontState = legacy ? font?.snapshotLegacy(pointer) : font?.snapshot(pointer), originalFont = fontState?.font || 0;
         if (originalFont) roots.push(exports.__uwt_root(originalFont, 0, 2));
         if (fontState?.material) roots.push(exports.__uwt_root(fontState.material, 0, 2));
         if (roots.some(handle => !handle)) throw new Error('Native root unavailable');
-        slot = { text, kind, roots, fontState, legacy, output: text, outputValue: value, outputRoot: 0, release: null }; slots.set(pointer, slot);
+        slot = { text, kind, roots, fontState, legacy, novel: knownContext?.novel, output: text, outputValue: value, outputRoot: 0, release: null }; slots.set(pointer, slot);
         slot.apply = output => {
           if (slots.get(pointer) !== slot || disposed) return;
           const previousBusy = busy; busy = true;
@@ -234,6 +240,7 @@
         if (!text.trim()) { drop(pointer); return value; }
         if (!options.active() || !options.enabled(slot.kind) || slot.output === slot.text) return value;
         const normalized = key(text);
+        if (slot.novel?.renderValue && normalized === key(slot.novel.full)) return slot.novel.renderValue;
         // Advance and reveal updates may repeat the source outside the full-message callback.
         // Substitute before the native setter; replaying the renderer would restart its timing.
         if (normalized && (key(slot.text).startsWith(normalized) || key(slot.output).startsWith(normalized))) return slot.outputValue;
@@ -288,28 +295,140 @@
     }
     function wholeLegacy(original, pointer, value, info, context) {
       if (!options.active() || !options.enabled(context.kind)) { drop(pointer); return original(pointer, value, info); }
-      const visible = read(value), full = read(context.value);
-      if (!visible.trim() || !full.trim()) { drop(pointer); return original(pointer, value, info); }
+      if (context.novelUnsupported) { drop(pointer); return original(pointer, value, info); }
+      const visible = read(value, context.novel ? 20000 : 2000), full = read(context.value);
+      if (!visible.trim() || !full.trim()) { if (!context.novel) drop(pointer); return original(pointer, value, info); }
       const current = slots.get(pointer);
-      if (current?.text === full && current.output !== full) return;
+      if (current?.text === full && current.output !== full) {
+        if (context.novel?.renderValue) return original(pointer, context.novel.renderValue, info);
+        return;
+      }
       const result = original(pointer, value, info);
       if (current?.text === full) return result;
-      let initial = true, lastOutput = full;
+      let initial = true, lastOutput = full, lastRevision = context.novel?.record.revision;
       bind(pointer, context.value, (_label, next) => {
-        if (initial) { initial = false; return; }
         const output = read(next, 10000);
-        if (output === lastOutput) return;
-        original(pointer, next, info);
+        if (initial) { initial = false; if (output === full) return; }
+        if (output === lastOutput && lastRevision === context.novel?.record.revision) return;
+        if (context.novel) renderNovel(pointer, context.novel, next, output, original, info);
+        else original(pointer, next, info);
         lastOutput = output;
-        if (context.novel) exports.__uwt_original_novelLength?.(pointer, 0x7fffffff, 0);
+        lastRevision = context.novel?.record.revision;
       }, context.owner, context, true);
       if (slots.has(pointer)) { revealable.add(pointer); options.onStory?.(); }
       return result;
     }
+    function novelTextInfo(value) {
+      const address = options.layout?.novel?.textType, roots = [];
+      try {
+        if (!Number.isInteger(address) || address < 8 || address + 4 > memory.buffer.byteLength) throw new Error('Native text parser unavailable');
+        roots.push(exports.__uwt_root(value, 0, 2));
+        if (!roots[0]) throw new Error('Native text root unavailable');
+        exports.__uwt_type(address);
+        const type = new DataView(memory.buffer).getUint32(address, true);
+        if (!type) throw new Error('Native text type unavailable');
+        const data = exports.__uwt_new_object(type); roots.push(exports.__uwt_root(data, 0, 2));
+        if (!data || !roots.at(-1)) throw new Error('Native text data unavailable');
+        exports.__uwt_text_data_ctor(data, value, 0);
+        const plain = read(exports.__uwt_text_data_plain(data, 0), 10000), length = exports.__uwt_text_data_length(data, 0);
+        if (!Number.isInteger(length) || length < 0 || length > 10000) throw new Error('Native text count unavailable');
+        return { plain, length };
+      } finally { for (const handle of roots) if (handle) exports.__uwt_unroot(handle); }
+    }
+    function prepareNovel(pointer, owner, data, fullValue, nativeLength) {
+      const layout = options.layout?.novel;
+      const engine = exports.__uwt_novel_engine(owner, 0);
+      if (!engine) return;
+      const page = exports.__uwt_engine_page(engine, 0);
+      const view = new DataView(memory.buffer);
+      if (page < 8 || page + Math.max(layout.pageMax, layout.pageCommand, layout.pageData) + 4 > view.byteLength) return;
+      const command = view.getUint32(page + layout.pageCommand, true), pageData = view.getUint32(page + layout.pageData, true);
+      if (command < 8 || command + layout.commandLineBreak >= view.byteLength || !pageData) return;
+      const value = exports.__uwt_command_text(command, 0), text = read(value);
+      if (!text.trim()) return;
+      const full = read(fullValue, 20000), plain = read(exports.__uwt_text_data_plain(data, 0), 20000);
+      const total = exports.__uwt_text_data_length(data, 0), current = novelTextInfo(value);
+      const joiner = new DataView(memory.buffer).getUint8(command + layout.commandLineBreak) ? '\n' : '';
+      const end = new DataView(memory.buffer).getInt32(page + layout.pageMax, true), start = end - current.length - joiner.length;
+      // Require the native parser and command boundaries to agree before replacing a page.
+      if (plain.length !== total || current.plain.length !== current.length || start < 0 || end > total || plain.slice(start, end) !== current.plain + joiner) return;
+      let record = novels.get(pointer);
+      if (!record || record.pageData !== pageData || record.full !== full) {
+        drop(pointer);
+        if (novels.size >= 256 && !novels.has(pointer)) novels.delete(novels.keys().next().value);
+        record = { pageData, full, plain, entries: new Map(), current: null, revision: 0 }; novels.set(pointer, record);
+        prepareNovelPrefetch(record, command);
+      }
+      if (record.plan) { const index = record.plan.commands.indexOf(command); if (index >= 0) { record.plan.cursor = index; scriptPlan = record.plan; } }
+      if (record.current?.command === command && record.current.text === text && record.current.end === end) {
+        record.current.nativeLength = nativeLength; return record.current;
+      }
+      drop(pointer);
+      const stage = { record, command, value, text, full, fullValue, start, end, joiner, nativeLength, renderRoot: 0, renderValue: 0 };
+      novelCapture.commands++; novelCapture.last = { sourceStart: start, sourceEnd: end, currentCharacters: current.length, pageCharacters: total };
+      record.current = stage; return stage;
+    }
+    function prepareNovelPrefetch(record, current) {
+      try {
+        const layout = options.layout.novel, view = new DataView(memory.buffer);
+        const pageData = record.pageData;
+        if (pageData + layout.pageCommands + 4 > view.byteLength) return;
+        const list = view.getUint32(pageData + layout.pageCommands, true);
+        if (list < 8 || list + 16 > view.byteLength) return;
+        const items = view.getUint32(list + 8, true), size = view.getInt32(list + 12, true);
+        if (items < 8 || items + 16 > view.byteLength || size < 1 || size > 512) return;
+        const capacity = view.getUint32(items + 12, true);
+        if (size > capacity || capacity > 2048 || items + 16 + capacity * 4 > view.byteLength) return;
+        const commands = Array.from({ length: size }, (_v, index) => view.getUint32(items + 16 + index * 4, true));
+        if (!commands.includes(current) || commands.some(pointer => pointer < 8 || pointer + layout.commandLineBreak >= view.byteLength)) return;
+        const rows = commands.map(pointer => ({ text: read(exports.__uwt_command_text(pointer, 0)), speaker: '' }));
+        prefetchGeneration++; prefetchBusy = false;
+        record.plan = { commands, rows, cursor: commands.indexOf(current), prepared: new Set(), ready: 0 };
+      } catch { /* Optional lookahead never changes native playback. */ }
+    }
+    function novelVisible(stage, length) {
+      if (length < stage.start && stage.start > 0) return Math.floor(Math.max(0, length) * stage.prefixLength / stage.start);
+      const progress = Math.min(1, Math.max(0, (length - stage.start) / Math.max(1, stage.end - stage.start)));
+      return stage.prefixLength + Math.ceil(stage.currentLength * progress);
+    }
+    function renderNovel(pointer, stage, next, output, original, info) {
+      if (output === stage.text) {
+        original(pointer, stage.fullValue, info);
+        exports.__uwt_original_novelLength(pointer, stage.nativeLength, 0);
+        if (stage.renderRoot) exports.__uwt_unroot(stage.renderRoot);
+        stage.renderRoot = stage.renderValue = 0; return;
+      }
+      let prefix = '', position = 0;
+      for (const entry of [...stage.record.entries.values()].sort((a, b) => a.start - b.start)) {
+        if (entry.end > stage.start || entry.start < position) continue;
+        prefix += stage.record.plain.slice(position, entry.start) + entry.output;
+        position = entry.end;
+      }
+      prefix += stage.record.plain.slice(position, stage.start);
+      const renderText = prefix + output + stage.joiner, renderValue = string(renderText), renderRoot = exports.__uwt_root(renderValue, 0, 2);
+      if (!renderRoot) return;
+      const previousRoot = stage.renderRoot;
+      try {
+        const complete = novelTextInfo(renderValue), current = novelTextInfo(next);
+        stage.prefixLength = complete.length - current.length - stage.joiner.length;
+        stage.currentLength = current.length + stage.joiner.length;
+        // Set the verified CJK face before the custom renderer reads glyph metrics.
+        font?.applyLegacy(pointer, renderText, slots.get(pointer)?.fontState);
+        original(pointer, renderValue, info);
+        exports.__uwt_novel_dirty?.(pointer, 0);
+        exports.__uwt_original_novelLength(pointer, novelVisible(stage, stage.nativeLength), 0);
+        stage.renderValue = renderValue; stage.renderRoot = renderRoot;
+        if (stage.record.entries.size >= 128 && !stage.record.entries.has(stage.command)) stage.record.entries.delete(stage.record.entries.keys().next().value);
+        stage.record.entries.set(stage.command, { start: stage.start, end: stage.end, output: output + stage.joiner });
+        if (localized.size >= 4096 && !localized.has(key(renderText))) localized.delete(localized.keys().next().value);
+        localized.set(key(renderText), null);
+      } catch (error) { exports.__uwt_unroot(renderRoot); throw error; }
+      if (previousRoot) exports.__uwt_unroot(previousRoot);
+    }
     function reset() {
       for (const pointer of [...slots.keys()]) drop(pointer);
       for (const pointer of [...windows.keys()]) dropWindow(pointer);
-      sources.clear(); translated.clear(); warming.clear(); glyphs.clear(); revealable.clear(); messageContext = legacyContext = undefined; speaker = ''; scene++;
+      sources.clear(); translated.clear(); warming.clear(); glyphs.clear(); revealable.clear(); novels.clear(); novelLabels.clear(); messageContext = legacyContext = undefined; speaker = ''; scene++;
       scriptPlan = scriptCollector = undefined; prefetchGeneration++; prefetchBusy = false;
     }
     function rows(text) {
@@ -356,7 +475,7 @@
           const context = legacyContext?.labels ? legacyContext.labels.get(pointer) : legacyContext;
           if (context) { font?.observeLegacy(pointer, read(context.value)); return wholeLegacy(original, pointer, value, info, context); }
         } catch { /* Preserve native text if a whole-message context is unavailable. */ }
-        const protectedLabel = revealable.has(pointer);
+        const protectedLabel = revealable.has(pointer) || novelLabels.has(pointer);
         value = stableText(pointer, value);
         const result = original(pointer, value, info);
         if (busy || disposed) return result;
@@ -367,7 +486,7 @@
       },
       legacyEnable(original, pointer, info) {
         const result = original(pointer, info);
-        if (!revealable.has(pointer)) try {
+        if (!revealable.has(pointer) && !novelLabels.has(pointer)) try {
           const value = exports.__uwt_legacy_text(pointer, 0);
           try { font?.observeLegacy(pointer, read(value)); } catch { /* Font observation does not suppress capture. */ }
           bind(pointer, value, exports.__uwt_original_legacySet, 0, undefined, true);
@@ -376,7 +495,7 @@
       },
       legacyProcessing(original, pointer, mesh, info) {
         const result = original(pointer, mesh, info);
-        if (busy || disposed || revealable.has(pointer)) return result;
+        if (busy || disposed || revealable.has(pointer) || novelLabels.has(pointer)) return result;
         try {
           const value = exports.__uwt_legacy_text(pointer, 0);
           if (slots.get(pointer)?.outputValue === value) return result;
@@ -385,28 +504,38 @@
         } catch { /* Unknown renderers keep their native mesh. */ }
         return result;
       },
-      legacyDisable(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
-      legacyDestroy(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); font?.forgetLegacy(pointer); } catch { /* Other graphic components are unaffected. */ } return original(pointer, info); },
+      legacyDisable(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); novels.delete(pointer); font?.forgetLegacy(pointer); } catch { /* Continue native cleanup. */ } return original(pointer, info); },
+      legacyDestroy(original, pointer, info) { try { if (slots.get(pointer)?.legacy) drop(pointer); novels.delete(pointer); novelLabels.delete(pointer); font?.forgetLegacy(pointer); } catch { /* Other graphic components are unaffected. */ } return original(pointer, info); },
       novelWindow(original, pointer, window, info) {
         const previous = legacyContext;
         try {
           const layout = options.layout?.novel, view = new DataView(memory.buffer);
-          if (layout && pointer >= 8 && pointer + Math.max(layout.body, layout.name) + 4 <= view.byteLength && window >= 8 && window + 20 <= view.byteLength) {
+          if (layout && pointer >= 8 && pointer + Math.max(layout.body, layout.name) + 4 <= view.byteLength && window >= 8 && window + 28 <= view.byteLength) {
             const body = view.getUint32(pointer + layout.body, true), name = view.getUint32(pointer + layout.name, true);
-            const data = view.getUint32(window + 12, true), nameValue = view.getUint32(window + 16, true);
+            const data = view.getUint32(window + 12, true), nameValue = view.getUint32(window + 16, true), nativeLength = view.getInt32(window + 24, true);
             const value = data ? exports.__uwt_text_data_raw(data, 0) : 0;
-            speaker = read(nameValue); register(speaker, 'name', speaker); register(read(value), 'story', speaker);
+            speaker = read(nameValue); register(speaker, 'name', speaker);
             const labels = new Map();
-            if (body) labels.set(body, { value, kind: 'story', speaker, owner: pointer, novel: true });
+            if (body) {
+              if (novelLabels.size < 256) novelLabels.add(body);
+              let novel;
+              try { if (data) novel = prepareNovel(body, pointer, data, value, nativeLength); } catch { /* Unverified boundaries retain the original masked page. */ }
+              if (!novel) novelCapture.unverified++;
+              if (novel) register(novel.text, 'story', speaker);
+              labels.set(body, { value: novel?.value || value, kind: 'story', speaker, owner: pointer, novel, novelUnsupported: !novel });
+            }
             if (name) labels.set(name, { value: nameValue, kind: 'name', speaker, owner: pointer });
             legacyContext = { labels };
           }
         } catch { legacyContext = previous; }
-        try { return original(pointer, window, info); } finally { legacyContext = previous; }
+        try { return original(pointer, window, info); } finally { legacyContext = previous; warmUpcoming(); }
       },
       novelLength(original, pointer, length, info) {
         const slot = slots.get(pointer);
-        if (slot?.legacy && slot.output !== slot.text && options.active() && options.enabled('story')) length = 0x7fffffff;
+        if (slot?.novel) {
+          slot.novel.nativeLength = length;
+          if (slot.novel.renderValue && slot.output !== slot.text && options.active() && options.enabled('story')) length = novelVisible(slot.novel, length);
+        }
         return original(pointer, length, info);
       },
       messageFrame(original, pointer, deltaTime, info) {
@@ -611,12 +740,14 @@
     };
     handlers.meshEnable = handlers.labelEnable; handlers.meshDisable = handlers.labelDisable; handlers.meshDestroy = handlers.labelDestroy;
     handlers.labelDrawing = handlers.labelProcessing; handlers.meshDrawing = handlers.labelProcessing;
+    handlers.novelDrawing = handlers.legacyProcessing;
     return { handlers, reset, invalidate: () => {
       translated.clear(); warming.clear(); prefetchGeneration++; prefetchBusy = false;
+      for (const record of novels.values()) { record.entries.clear(); record.revision++; }
       if (scriptPlan) { scriptPlan.prepared.clear(); scriptPlan.ready = 0; }
       font?.synchronize(); warmUpcoming();
     }, dispose: () => { reset(); localized.clear(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size,
-      observed, skipped: { ...skipped } }) };
+      observed, skipped: { ...skipped }, ...(novelCapture.commands || novelCapture.unverified ? { novel: { ...novelCapture, last: novelCapture.last && { ...novelCapture.last } } } : {}) }) };
   }
   root.__UnityNativeLabels = Object.freeze({ builds, create });
 })(globalThis);

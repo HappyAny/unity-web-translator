@@ -103,23 +103,19 @@ function changed(pointer, messageData, info) {
   novel.handlers.novelLength(exports.__uwt_original_novelLength, body, 2, 0);
 }
 novel.handlers.novelWindow(changed, window, data, 23);
-assert.equal(bindings.get('native-6000').original, read(first)); assert.equal(bindings.get('native-7000').context.kind, 'name');
+assert(!bindings.has('native-6000'), 'An incomplete page layout must retain native masking'); assert.equal(bindings.get('native-7000').context.kind, 'name');
 assert.deepEqual(lengths.at(-1), [body, 2], 'The initial source retains native visibility');
-const oldNovel = bindings.get('native-6000'); oldNovel.apply('完整中文对白。');
-assert.equal(read(labels.get(body)), '完整中文对白。'); assert.deepEqual(lengths.at(-1), [body, 0x7fffffff]);
-const updates = lengths.length; oldNovel.apply('完整中文对白。'); assert.equal(lengths.length, updates, 'An unchanged translation does not replay rendering');
 novel.handlers.novelLength(exports.__uwt_original_novelLength, body, 3, 0);
-assert.deepEqual(lengths.at(-1), [body, 0x7fffffff], 'Translated text stays visible while native commands continue');
+assert.deepEqual(lengths.at(-1), [body, 3], 'An unverified page never reveals upcoming text');
 assert.equal(changes, 1, 'Refreshing a translation never replays the window or command callback');
 novel.handlers.legacySet(exports.__uwt_original_legacySet, body, first, 0);
-assert.equal(read(labels.get(body)), '完整中文对白。', 'A repeated complete source cannot flash before advancing the window');
-assert.equal(changes, 1); assert.equal(lengths.length, updates + 1, 'Protected low-level writes do not replay visibility updates');
-enabled = false; oldNovel.apply(read(first));
+assert.equal(read(labels.get(body)), read(first)); assert.equal(changes, 1);
+enabled = false;
 novel.handlers.legacySet(exports.__uwt_original_legacySet, body, first, 0);
 assert.equal(read(labels.get(body)), read(first), 'Disabling story translation allows native source assignments');
 novel.handlers.novelLength(exports.__uwt_original_novelLength, body, 4, 0); assert.deepEqual(lengths.at(-1), [body, 4]);
 enabled = true; view.setUint32(data + 12, next, true);
-novel.handlers.novelWindow(changed, window, data, 23); oldNovel.apply('过期结果');
+novel.handlers.novelWindow(changed, window, data, 23);
 assert.equal(read(labels.get(body)), read(next));
 novel.handlers.novelWindow(() => { changes++; }, -1, 0, 0); assert.equal(changes, 3, 'An invalid layout still calls the original exactly once');
 novel.handlers.legacySet(exports.__uwt_original_legacySet, body, managed(''), 0);

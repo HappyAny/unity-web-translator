@@ -28,6 +28,8 @@ Set “Pretranslate upcoming lines” under the shared translation and language 
 
 On a matched legacy build where native coverage checks do not prevent missing visible characters, CJK translations prefer the bundled fallback. The matched dynamic-font constructor creates its material and texture; the material must be available before the font is applied. After loading the font data, native initialization recomputes cached baseline and line-height metrics and rejects invalid line heights. Covered Latin text keeps the original font. This override is fingerprint-gated, and pausing still restores the original font.
 
+Matched Utage novel windows bind the current native text command rather than all upcoming segments in a preloaded page. Prepared future translations stay hidden until their command starts. Translated character visibility follows native progress, retaining click-to-complete, subsequent clicks and completed text within the same page. The matched custom renderer uses the bundled CJK face before glyph layout; unverified boundaries retain the original page and mask.
+
 The popup reports actual selected and replaced text. Pausing restores active bridge and supported native component bindings. Text already loaded into an application from JSON requires a page refresh to restore completely. Other integration paths rely on the Unity project's font configuration.
 
 To update, drop a new Release ZIP into the extension's update page and select the original `extension` folder, or run `update.cmd`. Retain the original installation and folder to keep settings and cache. Reload the extension, then refresh your pages.

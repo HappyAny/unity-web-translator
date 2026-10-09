@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import '../extension/native-font.js';
+import '../extension/native-labels.js';
 
 const classicLayout = { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36 };
 const recentLayout = { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, metrics: { ascent: 228, lineHeight: 24, fontSize: 28 } };
@@ -104,6 +105,15 @@ for (const preferFallback of [false, true]) {
   assert.equal(f.constructors, preferFallback ? 1 : 0);
   f.adapter.restoreLegacy(200, { font: 42 }); assert.equal(f.font, 42);
   f.adapter.applyLegacy(200, 'Settings', { font: 42 }); assert.equal(f.font, 42, 'The atlas override leaves covered Latin text in its original font');
+  f.adapter.dispose(); assert.equal(f.roots.size, 0);
+}
+{
+  const config = globalThis.__UnityNativeLabels.builds[2].font;
+  const f = fixture({ native: true, copy: true, tmp: true, originalCoverage: true, preferFallback: config.legacyPreferFallback });
+  await new Promise(resolve => setImmediate(resolve));
+  f.adapter.applyLegacy(200, '（对不起，生命的堡垒崩塌了。）', { font: 42 });
+  assert.equal(f.font, 900, 'A matched custom renderer must use the CJK face even if its original font advertises coverage');
+  f.adapter.restoreLegacy(200, { font: 42 }); assert.equal(f.font, 42);
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false }, { native: true, nativeLength: 999 },
