@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.21
+
+- Add a fingerprint-gated adapter for an updated native text build, retaining its earlier supported build.
+- Verify the new dialogue, interface, lifecycle and font functions against their metadata, parameter types and unchanged component layouts.
+- Report unrecognized large engine modules in the popup instead of silently waiting for text hooks.
+- Log the running page version at startup and classify source-validation message errors without recording message contents or changing host message handling.
+- Extend native render-path regression coverage to every matched TMP build.
+
 ## 0.2.20
 
 - Construct the matched custom renderer's bundled CJK fallback with an explicit native font size before loading its owned font data and recomputing face metrics.

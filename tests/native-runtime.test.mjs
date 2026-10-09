@@ -42,8 +42,11 @@ const win = {
   },
   XMLHttpRequest: NativeXHR,
 };
-const originalFetch = win.fetch;
-const sandbox = { window: win, location, document: { readyState: 'loading', querySelector: selector => selector === '#unity-canvas' ? {} : null, querySelectorAll: () => [] },
+const originalFetch = win.fetch, diagnosticLogs = [];
+win.parent = {};
+let installOptions;
+const hostMessages = []; win.addEventListener('message', event => hostMessages.push(event));
+const sandbox = { console: { info: message => diagnosticLogs.push(message), warn: message => diagnosticLogs.push(message) }, window: win, location, document: { readyState: 'loading', querySelector: selector => selector === '#unity-canvas' ? {} : null, querySelectorAll: () => [] },
   chrome: { runtime: { sendMessage: message => { pageMessages.push(structuredClone(message)); return send(message, pageSender); } } },
   URL, Response, Headers, TextDecoder, TextEncoder, DOMException, Event, CustomEvent, ProgressEvent, AbortController,
   setTimeout: (fn, milliseconds) => setTimeout(fn, fastDeadlines && milliseconds === 15000 ? 25 : milliseconds), clearTimeout,
@@ -51,7 +54,7 @@ const sandbox = { window: win, location, document: { readyState: 'loading', quer
 };
 let nativeOptions;
 const invalidations = [];
-sandbox.__UnityWasmTools = { install(options) { options.createHandlers({}, {}); return () => {}; } };
+sandbox.__UnityWasmTools = { install(options) { installOptions = options; options.createHandlers({}, {}); return () => {}; } };
 sandbox.__UnityNativeLabels = { builds: [], create(_exports, options) {
   nativeOptions = options;
   return { handlers: {}, invalidate: () => invalidations.push(options.context()), dispose() {} };
@@ -136,8 +139,21 @@ assert.equal(win.__UnityWebTranslator.diagnostics().configuredRules, 0, 'A new p
 
 // Runtime status never contains request queries, credentials, or dialogue content.
 intervalCallbacks[1](); await tick();
-const report = await request('getRuntimeStatus'); assert(report.reports[0].unityDetected); assert(report.reports[0].translatedStrings > 0);
+assert.equal(hostMessages.length, 0, 'Translation RPC never reaches the host message listener');
+const foreign = { type: 'message', source: win, data: { channel: 'PRIVATE_TOKEN', dialogue: 'こんにちは', apiKey: 'TEST_ONLY_NOT_SECRET' } };
+win.dispatchEvent(foreign); win.dispatchEvent({ type: 'error', message: 'Error: origin error.' });
+assert.equal(hostMessages.length, 1); assert.equal(hostMessages[0], foreign, 'Observation preserves the original message for host listeners');
+assert(diagnosticLogs.some(line => line.includes('host-message-error') && line.includes('self') && line.includes('other')));
+const diagnosticsBefore = diagnosticLogs.length; win.dispatchEvent({ type: 'error', message: 'Error: origin error.' });
+assert.equal(diagnosticLogs.length, diagnosticsBefore, 'Repeated errors are classified once');
+installOptions.onUnrecognized('f'.repeat(64), 2 * 1024 * 1024);
+assert.equal(win.__UnityWebTranslator.diagnostics().wasmStatus, 'waiting', 'Small unrelated modules do not mark the engine unsupported');
+installOptions.onUnrecognized('f'.repeat(64), 20 * 1024 * 1024); await tick();
+assert.equal(win.__UnityWebTranslator.diagnostics().wasmStatus, 'unrecognized');
+assert(!JSON.stringify(diagnosticLogs).includes('PRIVATE_TOKEN')); assert(!JSON.stringify(diagnosticLogs).includes('TEST_ONLY_NOT_SECRET')); assert(!JSON.stringify(diagnosticLogs).includes('こんにちは'));
+const report = await request('getRuntimeStatus'); assert.equal(report.reports[0].wasmStatus, 'unrecognized'); assert(report.reports[0].unityDetected); assert(report.reports[0].translatedStrings > 0);
 assert(!JSON.stringify(report).includes('PRIVATE_TOKEN')); assert(!JSON.stringify(report).includes('TEST_ONLY_NOT_SECRET')); assert(!JSON.stringify(report).includes('こんにちは'));
 assert.equal((await send({ action: 'getRuntimeStatus' }, pageSender)).ok, false);
 win.__UnityWebTranslator.uninstall(); await tick(); assert.equal(win.fetch, originalFetch); assert.equal(win.XMLHttpRequest, NativeXHR); assert.equal(win.UnityWebTranslator, undefined); assert.equal(displayed.at(-1), 'さようなら');
+assert.equal(callbacks.get('message').size, 1, 'Uninstall removes only the diagnostic observer, keeping the host listener'); assert.equal(callbacks.get('error').size, 0);
 console.log('Native runtime: real background/bridge/cache, fetch metadata, rich text, history, pause, deadlines, independent profiles, stale results and safe diagnostics passed.');

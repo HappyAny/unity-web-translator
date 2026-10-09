@@ -47,9 +47,9 @@ assert.equal(manyNative.first(2, 3), 6); assert.equal(manyNative.last(2, 3), 37)
 assert.equal(manyNative.__indirect_function_table.length, 33);
 assert.throws(() => tools.rewrite(manyFixture, { importedFunctions: 0, hooks: Array.from({ length: 33 }, (_, index) => ({ name: 'slot' + index, function: index })) }), /Invalid hook plan/);
 
-const nativeInstantiate = WebAssembly.instantiate, states = [];
+const nativeInstantiate = WebAssembly.instantiate, states = [], unknownBuilds = [];
 let active = true;
-const restore = tools.install({ builds: [spec], enabled: () => active, createHandlers: () => ({ add: (original, a, b) => original(a, b) * 3 }), onStatus: value => states.push(value) });
+const restore = tools.install({ builds: [spec], enabled: () => active, createHandlers: () => ({ add: (original, a, b) => original(a, b) * 3 }), onStatus: value => states.push(value), onUnrecognized: (hash, bytes) => unknownBuilds.push({ hash, bytes }) });
 let result = await WebAssembly.instantiate(fixture);
 assert.equal(result.instance.exports.add(2, 3), 15);
 assert.deepEqual(states, ['ready']);
@@ -57,6 +57,7 @@ active = false; result = await WebAssembly.instantiate(fixture);
 assert.equal(result.instance.exports.add(2, 3), 5, 'An inactive profile leaves the module unchanged');
 active = true; const unknown = fixture.slice(); unknown[unknown.length - 1] = 1;
 result = await WebAssembly.instantiate(unknown); assert.equal(result.instance.exports.add(2, 3), 5, 'A different fingerprint keeps native behavior');
+assert.deepEqual(unknownBuilds, [{ hash: createHash('sha256').update(unknown).digest('hex'), bytes: unknown.length }], 'Unmatched modules report only a fingerprint and size while retaining native behavior');
 restore(); assert.equal(WebAssembly.instantiate, nativeInstantiate);
 
 const minified = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0,

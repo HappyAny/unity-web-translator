@@ -9,8 +9,21 @@
   let transportScheduled = false;
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', lastCoverage = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.20', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.21', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
+  console.info('[Unity Web Translator] version=' + stats.version);
+  let lastHostMessage; const reportedMessageErrors = new Set();
+  function observeHostMessage(event) {
+    const value = event.data?.channel;
+    lastHostMessage = { source: event.source === window ? 'self' : event.source === window.parent ? 'parent' : 'other',
+      dataType: typeof event.data, channel: value === channel ? 'unity-translator' : value === 'cocos-web-translator-v1' ? 'cocos-translator' : 'other' };
+  }
+  function observeHostError(event) {
+    if (!lastHostMessage || !/\borigin error\b/i.test(event.message || '')) return;
+    const detail = JSON.stringify(lastHostMessage);
+    if (!reportedMessageErrors.has(detail)) { reportedMessageErrors.add(detail); console.warn('[Unity Web Translator] host-message-error=' + detail); }
+  }
+  window.addEventListener('message', observeHostMessage, true); window.addEventListener('error', observeHostError);
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
   const signature = value => JSON.stringify([value.profileId, value.revision, value.providerSignature, value.paused,
@@ -246,6 +259,7 @@
     for (const cancel of held) cancel();
     for (const binding of bindings.values()) try { binding.apply(binding.original); } catch { /* Label disposed. */ }
     bindings.clear(); window.removeEventListener(responseEvent, receive);
+    window.removeEventListener('message', observeHostMessage, true); window.removeEventListener('error', observeHostError);
     nativeLabels?.dispose(); disposeWasm?.();
     for (const entry of queued.splice(0)) entry.reject(new Error('Translation disposed'));
     for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Translation disposed')); } pending.clear();
@@ -278,6 +292,11 @@
           fontStatus: value => { stats.fontStatus = value; console.info('[Unity Web Translator] font=' + value); },
         });
         return nativeLabels.handlers;
+      },
+      onUnrecognized(hash, bytes) {
+        if (bytes < 16 * 1024 * 1024 || stats.wasmStatus === 'ready') return;
+        stats.wasmStatus = 'unrecognized';
+        console.info('[Unity Web Translator] native=unrecognized sha256=' + hash + ' bytes=' + bytes); report();
       },
       onStatus: value => {
         stats.wasmStatus = value; console.info('[Unity Web Translator] native=' + value);

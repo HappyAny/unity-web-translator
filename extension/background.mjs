@@ -19,7 +19,7 @@ function runtimeReport(payload) {
   }
   result.version = typeof payload.version === 'string' && /^\d+\.\d+\.\d+$/.test(payload.version) ? payload.version : '';
   result.unityDetected = payload.unityDetected === true; result.lateInjection = payload.lateInjection === true;
-  result.wasmStatus = ['waiting', 'ready', 'failed'].includes(payload.wasmStatus) ? payload.wasmStatus : 'waiting';
+  result.wasmStatus = ['waiting', 'ready', 'failed', 'unrecognized'].includes(payload.wasmStatus) ? payload.wasmStatus : 'waiting';
   result.nativeLabelCalls = Number.isSafeInteger(payload.nativeLabelCalls) && payload.nativeLabelCalls >= 0 ? Math.min(1000000, payload.nativeLabelCalls) : 0;
   result.fontStatus = ['waiting', 'loading', 'available', 'ready', 'failed'].includes(payload.fontStatus) ? payload.fontStatus : 'waiting';
   result.nativeStoryCalls = Number.isSafeInteger(payload.nativeStoryCalls) && payload.nativeStoryCalls >= 0 ? Math.min(1000000, payload.nativeStoryCalls) : 0;

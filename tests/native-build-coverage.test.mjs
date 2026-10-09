@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import '../extension/native-labels.js';
 
-for (const build of globalThis.__UnityNativeLabels.builds.slice(0, 3)) {
+for (const build of globalThis.__UnityNativeLabels.builds.filter(build => build.hooks.some(hook => hook.name === 'meshEnable'))) {
   const memory = new WebAssembly.Memory({ initial: 4 });
   const labels = new Map(), roots = new Set(), bindings = new Map();
   let cursor = 10000, rootId = 1, active = true, uiEnabled = true;

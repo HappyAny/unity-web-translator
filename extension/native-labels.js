@@ -116,6 +116,32 @@
       __uwt_legacy_font: 49188, __uwt_legacy_set_font: 7282, __uwt_legacy_text: 5053, __uwt_type: 589,
       __uwt_array: 599, __uwt_new_object: 591, __uwt_instruction_string: 6831, __uwt_legacy_initialize_native: 27948,
       __uwt_legacy_refresh_native: 5970, __uwt_legacy_reserve_native: 1078 },
+  }, {
+    sha256: '27a57257f7dd2d89122ba25409e9f1ca07ad6cc0ec2981b183697b9a8d1ee805',
+    importedFunctions: 624,
+    font: { byteArrayTypeAddress: 9905740 },
+    hooks: [
+      { name: 'labelSet', function: 30413 }, { name: 'labelEnable', function: 29462 },
+      { name: 'labelDisable', function: 29464 }, { name: 'labelDestroy', function: 29465 },
+      { name: 'labelProcessing', function: 30578 }, { name: 'labelDrawing', function: 29440 },
+      { name: 'meshDrawing', function: 29381 }, { name: 'meshEnable', function: 29396 },
+      { name: 'meshDisable', function: 29397 }, { name: 'meshDestroy', function: 29398 },
+      { name: 'legacySet', function: 109081 }, { name: 'legacyEnable', function: 109105 },
+      { name: 'legacyDisable', function: 109106 }, { name: 'legacyDestroy', function: 29094 },
+      { name: 'legacyProcessing', function: 109112 }, { name: 'storyParse', function: 72313 },
+      { name: 'nameSet', function: 54960 }, { name: 'scriptLoad', function: 113987 },
+      { name: 'balloonStart', function: 69468 }, { name: 'glyphInitialize', function: 72209 },
+      { name: 'windowText', function: 54965 }, { name: 'windowClear', function: 54959 },
+      { name: 'windowLog', function: 54966 }, { name: 'windowDispose', function: 54972 },
+      { name: 'windowShow', function: 72315 },
+    ],
+    exports: { __uwt_string: 151958, __uwt_label_text: 30411, __uwt_root: 168243, __uwt_unroot: 168233,
+      __uwt_type: 1616, __uwt_array: 1319, __uwt_write_file: 143985, __uwt_create_font: 29722,
+      __uwt_font: 12833, __uwt_set_font: 30415, __uwt_add_chars: 29774, __uwt_font_material: 4636,
+      __uwt_label_material: 5142, __uwt_set_material: 30416, __uwt_color: 30422, __uwt_set_color: 30423,
+      __uwt_property: 130029, __uwt_has_property: 130213, __uwt_material_color: 130194, __uwt_fallbacks: 14415,
+      __uwt_clear_fallbacks: 29744, __uwt_dirty: 30533, __uwt_balloon_complete: 69475, __uwt_legacy_text: 11263,
+      __uwt_legacy_font: 109078, __uwt_legacy_set_font: 109080 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();

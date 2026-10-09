@@ -2,6 +2,7 @@
 export const messages = Object.fromEntries([
   ['resourceRules', '原生文本资源规则 · JSON', 'Native text resource rules · JSON'],
   ['resourceRulesHint', '指定 GET JSON 的字符串字段；匹配内置适配器的 Unity 构建可留空，直接使用原生文字组件。保存后刷新网页。', 'Select string fields in GET JSON resources. Supported Unity builds can leave this empty and use native text components. Refresh after saving.'],
+  ['nativeWasmUnrecognized', '当前引擎版本尚未适配，请更新扩展后刷新网页。游戏更新可能需要新的适配。', 'This engine build is not supported yet. Update the extension and refresh the page; game updates may need a new adapter.'],
   ['nativeWasmReady', '原生组件适配已就绪。', 'The native component adapter is ready.'],
   ['nativeWasmFailed', '原生组件适配未启动，保留游戏原有行为。', 'The native component adapter could not start; original game behavior is retained.'],
   ['nativeLimits', '每个资源最多 1 MiB、32 条文本，最多等待 15 秒；失败时使用原文。字体需由 Unity 项目提供目标语言字形。', 'Up to 1 MiB and 32 selected strings per resource; a 15-second maximum wait with original-text fallback. The Unity project must supply glyphs for the target language.'],

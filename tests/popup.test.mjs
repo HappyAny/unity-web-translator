@@ -104,4 +104,9 @@ assert.equal(permissions.length, grantsBeforeUnbind); assert.equal((await reques
 assert($('storyEnabled').disabled && $('uiEnabled').disabled);
 f.frames[0].url = 'https://canvas.example.test/view';
 assert.equal((await request('getPageContext')).profileId, 'default', 'Other bindings remain intact');
+const pageSender = { id: f.chrome.runtime.id, frameId: 0, url: 'https://canvas.example.test/view', tab: { id: 1 } };
+const payload = { version: '0.2.21', wasmStatus: 'unrecognized', requests: 0, matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, configuredRules: 0 };
+assert((await new Promise(resolve => listener({ action: 'reportRuntime', payload }, pageSender, resolve))).ok);
+await $('runtimeRefresh').listeners.click(); assert($('runtimeStatus').textContent.includes('engine build is not supported'), 'The popup identifies unsupported native builds');
+assert(!$('runtimeStatus').textContent.includes('Configure resource rules'));
 console.log('Popup: selection activates authorized frames, denial, origin choices, retained shared switches/pause, navigation races, refresh fallback and independent bindings passed.');
