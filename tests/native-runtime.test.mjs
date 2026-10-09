@@ -23,7 +23,7 @@ const own = { id: f.chrome.runtime.id, url: 'chrome-extension://test-extension/o
 const pageSender = { id: f.chrome.runtime.id, frameId: 0, url: 'https://canvas.example.test/view?token=PRIVATE_TOKEN', tab: { id: 1 } };
 const send = (message, sender = own) => new Promise(resolve => listener(message, sender, resolve));
 async function request(action, payload, profileId) { const reply = await send({ action, payload, profileId }); assert(reply.ok, reply.error); return reply.data; }
-await request('setSharedSettings', { provider: 'openai', apiBase: 'https://api.example.test/v1', model: 'example-model', apiKey: 'TEST_ONLY_NOT_SECRET', storyEnabled: true, uiEnabled: true, historyEnabled: true, historyMaxEntries: 2 });
+await request('setSharedSettings', { provider: 'openai', apiBase: 'https://api.example.test/v1', model: 'example-model', apiKey: 'TEST_ONLY_NOT_SECRET', lookahead: 6, storyEnabled: true, uiEnabled: true, historyEnabled: true, historyMaxEntries: 2 });
 const rules = [{ url: '/story/*.json', fields: [{ path: 'lines[*].text', kind: 'story', speaker: 'speaker' }, { path: 'lines[*].speaker', kind: 'name' }] }];
 await request('setProfileSettings', { resourceRules: rules }, 'default');
 const context = await request('getPageContext'); await request('bindPageProfile', { id: 'default', tabId: 1, scope: context.scope });
@@ -49,6 +49,13 @@ const sandbox = { window: win, location, document: { readyState: 'loading', quer
   setTimeout: (fn, milliseconds) => setTimeout(fn, fastDeadlines && milliseconds === 15000 ? 25 : milliseconds), clearTimeout,
   setInterval: callback => { intervalCallbacks.push(callback); return intervalCallbacks.length; }, clearInterval: () => {},
 };
+let nativeOptions;
+const invalidations = [];
+sandbox.__UnityWasmTools = { install(options) { options.createHandlers({}, {}); return () => {}; } };
+sandbox.__UnityNativeLabels = { builds: [], create(_exports, options) {
+  nativeOptions = options;
+  return { handlers: {}, invalidate: () => invalidations.push(options.context()), dispose() {} };
+} };
 vm.createContext(sandbox);
 for (const file of ['native-resources.js', 'native-xhr.js', 'bridge.js', 'bootstrap.js', 'runtime.js']) vm.runInContext(await fs.readFile(new URL('../extension/' + file, import.meta.url), 'utf8'), sandbox, { filename: file });
 const tick = async () => { for (let i = 0; i < 12; i++) await new Promise(resolve => setImmediate(resolve)); };
@@ -59,6 +66,11 @@ async function waitUntil(check, description) {
 }
 await win.__UnityWebTranslator.synchronize(); await tick();
 assert.equal(win.__UnityWebTranslator.diagnostics().configuredRules, 1);
+assert.equal(nativeOptions.lookahead(), 6, 'The actual shared value reaches native prefetch');
+const previousEpoch = nativeOptions.context();
+await request('setSharedSettings', { lookahead: 4 }); await win.__UnityWebTranslator.synchronize();
+assert.equal(nativeOptions.lookahead(), 4); assert(nativeOptions.context() > previousEpoch);
+assert.equal(invalidations.at(-1), nativeOptions.context(), 'Invalidation starts prefetch in the new preference generation');
 const response = await win.fetch('/story/start.json?token=PRIVATE_TOKEN');
 assert.equal(response.url, 'https://canvas.example.test/story/start.json?token=PRIVATE_TOKEN'); assert.equal(response.type, 'basic'); assert.equal(response.redirected, false);
 assert.equal(response.headers.get('Content-Length'), null); assert.equal(response.headers.get('ETag'), null);
@@ -80,6 +92,15 @@ assert.equal(displayed.at(-1), '你好');
 win.UnityWebTranslator.bind('dialogue', 'さようなら', text => displayed.push(text), { speaker: 'アリス', scene: 'one' }); await waitUntil(() => displayed.at(-1) === '再见', 'the second native dialogue');
 assert.equal(displayed.at(-1), '再见');
 const last = completions.findLast(row => row.source === 'さようなら'); assert.equal(last.reference.referenceDialogue[0].text, 'こんにちは'); assert.equal(last.reference.referenceDialogue[0].speaker, 'アリス');
+const preparedSource = '未来の遊園地', prepared = await nativeOptions.translate(preparedSource, { kind: 'story', speaker: 'アリス', recordHistory: false });
+await nativeOptions.translate('未表示の遊園地', { kind: 'story', speaker: 'アリス', recordHistory: false });
+assert(!completions.at(-1).reference.referenceDialogue.some(row => row.text === preparedSource), 'Future lines never become played history');
+const preparedOutput = [], beforePrepared = completions.length;
+nativeOptions.bind('prepared', preparedSource, text => preparedOutput.push(text), { kind: 'story', speaker: 'アリス', scene: 'one' }, prepared);
+assert.deepEqual(preparedOutput, [prepared], 'Native prepared text displays immediately without a source flash');
+await tick(); assert.equal(completions.length, beforePrepared, 'A ready line is not sent again when display-time history changes');
+await nativeOptions.translate('後続の遊園地', { kind: 'story', speaker: 'アリス', recordHistory: false });
+assert(completions.at(-1).reference.referenceDialogue.some(row => row.text === preparedSource && row.translation === prepared), 'Prepared text enters history only after it is displayed');
 await request('setPreferences', { paused: true }); win.__UnityWebTranslator.applyPreferences((await send({ action: 'getPreferences' }, pageSender)).data);
 assert.equal(displayed.at(-1), 'さようなら');
 const pausedCount = completions.length; responseRaw = '{"lines":[{"text":"こんにちは"}]}'; assert.equal(await (await win.fetch('/story/paused.json')).text(), responseRaw); assert.equal(completions.length, pausedCount);

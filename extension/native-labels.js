@@ -82,23 +82,28 @@
       stringArrayTypeAddress: 5983396, legacyPreferFallback: true,
       legacyNativeData: { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, copy: true,
         metrics: { ascent: 228, lineHeight: 24, fontSize: 28 } } },
-    layout: { message: { text: 8, name: 12, view: 24 } },
+    layout: { message: { text: 8, name: 12, view: 24 },
+      instruction: { message: 1, name: 0, text: 1, offset: 8, lineFeed: '$n', marker: '$' } },
     hooks: [
       { name: 'legacySet', function: 49186 }, { name: 'legacyEnable', function: 49161 },
       { name: 'legacyDisable', function: 49160 }, { name: 'legacyDestroy', function: 48977 },
       { name: 'messageFrame', function: 26272 }, { name: 'messageText', function: 16537 },
       { name: 'nameSet', function: 26293 },
+      { name: 'scriptInitialize', function: 27278 }, { name: 'scriptInstruction', function: 58481 },
+      { name: 'scriptAdvance', function: 26178 }, { name: 'scriptDispose', function: 58483 },
     ],
     exports: { __uwt_string: 1212, __uwt_label_text: 5053, __uwt_root: 113391, __uwt_unroot: 113379,
       __uwt_write_file: 113636, __uwt_legacy_ctor: 69089, __uwt_legacy_has_char: 28015, __uwt_legacy_dynamic: 69112,
       __uwt_legacy_material: 12228,
       __uwt_legacy_font: 49188, __uwt_legacy_set_font: 7282, __uwt_legacy_text: 5053, __uwt_type: 589,
-      __uwt_array: 599, __uwt_new_object: 591, __uwt_legacy_initialize_native: 27948,
+      __uwt_array: 599, __uwt_new_object: 591, __uwt_instruction_string: 6831, __uwt_legacy_initialize_native: 27948,
       __uwt_legacy_refresh_native: 5970, __uwt_legacy_reserve_native: 1078 },
   }];
   function create(exports, options) {
     const slots = new Map(), windows = new Map(), sources = new Map(), translated = new Map(), balloons = new Set(), glyphs = new Set();
     const revealable = new Set();
+    const warming = new Map();
+    let scriptPlan, scriptCollector, prefetchGeneration = 0, prefetchBusy = false;
     let scene = 0, speaker = '', busy = false, replaying = false, disposed = false, messageContext, legacyContext;
     const memory = exports.memory;
     if (!(memory instanceof WebAssembly.Memory)) throw new Error('Native memory unavailable');
@@ -185,7 +190,9 @@
           }
           finally { busy = previousBusy; }
         };
-        slot.release = options.bind('native-' + pointer, text, slot.apply, { kind, speaker: context?.speaker || '', scene: 'native-' + scene });
+        const ready = translated.get(text);
+        slot.release = options.bind('native-' + pointer, text, slot.apply, { kind, speaker: context?.speaker || '', scene: 'native-' + scene }, ready);
+        if (ready && ready !== text) slot.apply(ready);
         options.onBound?.(kind);
       } catch {
         if (slot) { if (slots.get(pointer) === slot) drop(pointer); }
@@ -209,14 +216,47 @@
     }
     function remember(text, kind, name = speaker) {
       register(text, kind, name);
-      if (!options.enabled(kind)) return;
-      const context = options.context?.();
-      options.translate(text, { kind, speaker: name, recordHistory: false }).then(result => {
-        if (!disposed && context === options.context?.() && typeof result === 'string' && result !== text) {
+      if (!options.active() || !options.enabled(kind)) return Promise.resolve(text);
+      if (translated.has(text)) return Promise.resolve(translated.get(text));
+      const context = options.context?.(), generation = scene, id = JSON.stringify([kind, name, text]);
+      if (warming.has(id)) return warming.get(id);
+      const work = Promise.resolve().then(() => {
+        if (disposed || generation !== scene || context !== options.context?.() || !options.active() || !options.enabled(kind)) return text;
+        return options.translate(text, { kind, speaker: name, recordHistory: false });
+      }).then(result => {
+        if (!disposed && generation === scene && context === options.context?.() && warming.get(id) === work && typeof result === 'string' && result !== text) {
           if (translated.size >= 4096) translated.delete(translated.keys().next().value);
           translated.set(text, result);
         }
-      }).catch(() => {});
+        return result;
+      }).catch(() => text).finally(() => { if (warming.get(id) === work) warming.delete(id); });
+      warming.set(id, work); return work;
+    }
+    function lookahead() {
+      const value = options.lookahead?.() ?? 2;
+      return Number.isInteger(value) ? Math.min(20, Math.max(0, value)) : 2;
+    }
+    function warmUpcoming() {
+      const plan = scriptPlan;
+      if (!plan || prefetchBusy || disposed || !options.active() || !options.enabled('story')) return;
+      const next = () => {
+        const end = Math.min(plan.rows.length, plan.cursor + 1 + lookahead());
+        for (let index = plan.cursor + 1; index < end; index++) if (!plan.prepared.has(index)) return index;
+        return -1;
+      };
+      if (next() < 0) return;
+      const generation = prefetchGeneration; prefetchBusy = true;
+      // One background line at a time leaves capacity for the displayed dialogue.
+      (async () => {
+        while (!disposed && scriptPlan === plan && generation === prefetchGeneration && options.active() && options.enabled('story')) {
+          const index = next(); if (index < 0) break;
+          const row = plan.rows[index]; plan.prepared.add(index);
+          const output = await remember(row.text, 'story', row.speaker);
+          if (scriptPlan !== plan || generation !== prefetchGeneration || disposed || !options.active() || !options.enabled('story')) break;
+          if (output !== row.text) { plan.ready++; options.onPrefetch?.('ready', plan.ready); }
+          if (row.speaker) await remember(row.speaker, 'name', row.speaker);
+        }
+      })().catch(() => {}).finally(() => { if (generation === prefetchGeneration) prefetchBusy = false; });
     }
     function wholeLegacy(original, pointer, value, info, context) {
       if (!options.active() || !options.enabled(context.kind)) { drop(pointer); return original(pointer, value, info); }
@@ -241,7 +281,8 @@
     function reset() {
       for (const pointer of [...slots.keys()]) drop(pointer);
       for (const pointer of [...windows.keys()]) dropWindow(pointer);
-      sources.clear(); translated.clear(); glyphs.clear(); revealable.clear(); messageContext = legacyContext = undefined; speaker = ''; scene++;
+      sources.clear(); translated.clear(); warming.clear(); glyphs.clear(); revealable.clear(); messageContext = legacyContext = undefined; speaker = ''; scene++;
+      scriptPlan = scriptCollector = undefined; prefetchGeneration++; prefetchBusy = false;
     }
     function rows(text) {
       // Read only a bounded CSV sample for prefetch. The original script is untouched.
@@ -334,7 +375,7 @@
             messageContext = { value, kind: 'story', speaker, owner: view.getUint32(pointer + layout.view, true) };
           }
         } catch { messageContext = previous; }
-        try { return original(pointer, deltaTime, info); } finally { messageContext = previous; }
+        try { return original(pointer, deltaTime, info); } finally { messageContext = previous; warmUpcoming(); }
       },
       messageText(original, pointer, value, info) {
         const previous = legacyContext;
@@ -370,7 +411,7 @@
       },
       scriptPrefetch(original, path, value, file, info) {
         try {
-          const script = read(value, 1000000), lookahead = Math.min(10, Math.max(0, options.lookahead?.() ?? 3));
+          const script = read(value, 1000000), countAhead = lookahead();
           let count = 0;
           // Warm plain script lines only; commands, variables and embedded events are untouched.
           for (const row of script.split(/\r?\n/).slice(0, 20000)) {
@@ -378,10 +419,49 @@
             if (!line || /^[;@#]/.test(line) || /[{}\[\]]/.test(line)) continue;
             const match = /^([^:\s]{1,80}):\s*(.*)$/.exec(line), name = match?.[1] || '', text = match?.[2] ?? line;
             register(text, 'story', name); if (name) register(name, 'name', name);
-            if (count++ < lookahead) { remember(text, 'story', name); if (name) remember(name, 'name', name); }
+            if (count++ < countAhead) { remember(text, 'story', name); if (name) remember(name, 'name', name); }
           }
         } catch { /* Compiled or unavailable scripts need no prefetch. */ }
         return original(path, value, file, info);
+      },
+      scriptInitialize(original, pointer, ...args) {
+        const previous = scriptCollector; reset(); options.resetHistory?.();
+        const plan = { owner: pointer, rows: [], offsets: new Map(), prepared: new Set(), cursor: -1, ready: 0, characters: 0 };
+        scriptCollector = plan;
+        let result;
+        try { result = original(pointer, ...args); } finally { scriptCollector = previous; }
+        scriptPlan = plan; options.onPrefetch?.('captured', plan.rows.length); warmUpcoming();
+        return result;
+      },
+      scriptInstruction(original, pointer, instruction, command, work, ...args) {
+        try {
+          const plan = scriptCollector, layout = options.layout?.instruction;
+          if (plan?.owner === pointer && layout && instruction === layout.message && plan.rows.length < 4096) {
+            const offset = new DataView(memory.buffer).getUint32(work + layout.offset, true);
+            const name = read(exports.__uwt_instruction_string(pointer, layout.name, work, 0)).slice(0, 150);
+            let text = read(exports.__uwt_instruction_string(pointer, layout.text, work, 0));
+            if (layout.lineFeed) text = text.replaceAll(layout.lineFeed, '\n');
+            if (layout.marker) text = text.replaceAll(layout.marker, '');
+            if (text.trim() && !plan.offsets.has(offset) && plan.characters + text.length + name.length <= 1000000) {
+              plan.offsets.set(offset, plan.rows.length); plan.rows.push({ text, speaker: name }); plan.characters += text.length + name.length;
+            }
+          }
+        } catch { /* Dynamic or unavailable arguments wait until actual display. */ }
+        return original(pointer, instruction, command, work, ...args);
+      },
+      scriptAdvance(original, pointer, work, ...args) {
+        try {
+          const plan = scriptPlan, layout = options.layout?.instruction;
+          if (plan?.owner === pointer && layout) {
+            const index = plan.offsets.get(new DataView(memory.buffer).getUint32(work + layout.offset, true));
+            if (index !== undefined) { plan.cursor = index; warmUpcoming(); }
+          }
+        } catch { /* Unknown command positions keep native execution. */ }
+        return original(pointer, work, ...args);
+      },
+      scriptDispose(original, pointer, ...args) {
+        if (scriptPlan?.owner === pointer) { reset(); options.resetHistory?.(); }
+        return original(pointer, ...args);
       },
       glyphInitialize(original, pointer, letter, parent, active, info) {
         const mark = () => { try {
@@ -474,19 +554,23 @@
       scriptLoad(original, pointer, value, info) {
         try {
           reset(); options.resetHistory?.();
-          const script = read(value, 1000000), lookahead = Math.min(10, Math.max(0, options.lookahead?.() ?? 3));
+          const script = read(value, 1000000), countAhead = lookahead();
           let count = 0;
           for (const row of rows(script)) {
             if (!['message', 'dotmessage', 'messageTextCenter'].includes(row[0]) || row.length < 3) continue;
             register(row[2], 'story', row[1]); register(row[1], 'name', row[1]);
-            if (count++ < lookahead) { remember(row[2], 'story', row[1]); if (row[1]) remember(row[1], 'name', row[1]); }
+            if (count++ < countAhead) { remember(row[2], 'story', row[1]); if (row[1]) remember(row[1], 'name', row[1]); }
           }
         } catch { /* Script limits never stop the game. */ }
         return original(pointer, value, info);
       },
     };
     handlers.meshEnable = handlers.labelEnable; handlers.meshDisable = handlers.labelDisable; handlers.meshDestroy = handlers.labelDestroy;
-    return { handlers, reset, invalidate: () => { translated.clear(); font?.synchronize(); }, dispose: () => { reset(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size }) };
+    return { handlers, reset, invalidate: () => {
+      translated.clear(); warming.clear(); prefetchGeneration++; prefetchBusy = false;
+      if (scriptPlan) { scriptPlan.prepared.clear(); scriptPlan.ready = 0; }
+      font?.synchronize(); warmUpcoming();
+    }, dispose: () => { reset(); disposed = true; font?.dispose(); }, diagnostics: () => ({ nativeBindings: slots.size + windows.size }) };
   }
   root.__UnityNativeLabels = Object.freeze({ builds, create });
 })(globalThis);

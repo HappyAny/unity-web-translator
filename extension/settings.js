@@ -26,7 +26,7 @@ function values() {
     maxFreeCharacters: Number($('maxFreeCharacters').value), storyEnabled: $('storyEnabled').checked,
     uiEnabled: $('uiEnabled').checked, extraBody: parseBody(),
     disableThinking: $('disableThinking').checked, thinkingPreset: $('thinkingPreset').value,
-    requestTimeoutSeconds: Number($('requestTimeoutSeconds').value),
+    requestTimeoutSeconds: Number($('requestTimeoutSeconds').value), lookahead: Number($('lookahead').value),
     targetLanguage: $('targetLanguage').value, interfaceLanguage: $('interfaceLanguage').value,
     historyEnabled: $('historyEnabled').checked, historyMaxEntries: Number($('historyMaxEntries').value) });
   delete settings.paused;
@@ -67,7 +67,7 @@ function renderSummary() {
 function fill(data, profileOnly = false) {
   const priorTarget = currentSettings?.targetLanguage, priorProfile = currentSettings?.profileId; currentSettings = { ...DEFAULTS, ...currentSettings, ...data };
   if (!profileOnly) {
-    for (const key of ['provider', 'apiBase', 'model', 'maxFreeCharacters', 'thinkingPreset', 'requestTimeoutSeconds', 'targetLanguage', 'interfaceLanguage', 'historyMaxEntries']) $(key).value = currentSettings[key];
+    for (const key of ['provider', 'apiBase', 'model', 'maxFreeCharacters', 'thinkingPreset', 'requestTimeoutSeconds', 'lookahead', 'targetLanguage', 'interfaceLanguage', 'historyMaxEntries']) $(key).value = currentSettings[key];
     for (const key of ['storyEnabled', 'uiEnabled', 'disableThinking', 'historyEnabled']) $(key).checked = !!currentSettings[key];
     $('extraBody').value = JSON.stringify(currentSettings.extraBody || {}, null, 2);
     $('apiKey').value = ''; $('clearApiKey').checked = false; $('rememberApiKey').checked = !!currentSettings.rememberApiKey;

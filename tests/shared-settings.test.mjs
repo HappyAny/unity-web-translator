@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
 import { IDBFactory } from 'fake-indexeddb';
 import { ProfileManager } from '../extension/profiles.mjs';
-import { DEFAULTS, providerIdentity, stableJson } from '../extension/core.mjs';
+import { DEFAULTS, providerIdentity, stableJson, validateSettings } from '../extension/core.mjs';
 import { createCache } from '../extension/cache.mjs';
 import { digest } from '../extension/engine.mjs';
 import { area } from './fixtures/chrome.mjs';
 
 const id = '11111111-1111-4111-8111-111111111111', indexedDB = new IDBFactory();
 const previous = { ...DEFAULTS, provider: 'openai', apiBase: 'https://chosen.example.test/v1', model: 'chosen-model',
-  targetLanguage: 'en', historyEnabled: true, historyMaxEntries: 4, customPrompt: 'Names: アリス = Alice.' };
+  targetLanguage: 'en', lookahead: 5, historyEnabled: true, historyMaxEntries: 4, customPrompt: 'Names: アリス = Alice.' };
 const storage = { local: area({
   settings: { ...DEFAULTS, provider: 'openai', apiBase: 'https://other.example.test/v1', model: 'other-model', customPrompt: 'Original names.' },
   rememberApiKey: true, apiKey: 'OTHER_TEST_KEY',
@@ -27,6 +27,7 @@ const selected = await manager.get(id), original = await manager.get('default');
 assert.equal(manager.registry.revision, 25);
 const shared = await manager.sharedView(true);
 assert.equal(shared.migratedFromProfile, 'Chosen'); assert.equal(shared.apiBase, previous.apiBase); assert.equal(shared.targetLanguage, 'en');
+assert.equal(shared.lookahead, 5); assert.equal((await manager.view(null)).lookahead, 0);
 assert(shared.hasApiKey && !shared.rememberApiKey); assert(!Object.hasOwn(shared, 'customPrompt'));
 for (const engine of [selected, original]) { assert.equal(engine.settings.model, 'chosen-model'); assert.equal(engine.apiKey, 'SESSION_TEST_KEY');  }
 assert.equal(original.settings.customPrompt, 'Original names.'); assert.equal(selected.settings.customPrompt, previous.customPrompt);
@@ -38,6 +39,7 @@ assert.equal(storage.local.data.profileSettingsBackupV1.default.apiKey, 'OTHER_T
 
 const fresh = await manager.create({ name: 'Fresh' }), freshEngine = await manager.get(fresh.profileId);
 assert(fresh.hasApiKey); assert.equal(fresh.model, 'chosen-model'); assert.equal(fresh.targetLanguage, 'en'); assert.equal(fresh.customPrompt, '');
+assert.equal(fresh.lookahead, 5);
 assert.deepEqual(storage.local.data['profile:' + fresh.profileId].settings, { customPrompt: '', resourceRules: [] });
 assert(!Object.hasOwn(storage.local.data['profile:' + fresh.profileId], 'apiKey'));
 assert.equal((await freshEngine.cache.stats('en')).automatic, 0);
@@ -45,7 +47,7 @@ await manager.configure(id, { customPrompt: 'アリス = Lady Alice.' });
 assert.equal(selected.settings.customPrompt, 'アリス = Lady Alice.'); assert.equal(original.settings.customPrompt, 'Original names.'); assert.equal(freshEngine.settings.customPrompt, '');
 const copied = await manager.create({ name: 'Copied', copyFrom: id }); assert.equal(copied.customPrompt, selected.settings.customPrompt); assert(copied.hasApiKey);
 
-await manager.configure(null, { targetLanguage: 'zh-CN', historyEnabled: false, historyMaxEntries: 9, uiEnabled: true, storyEnabled: false,
+await manager.configure(null, { targetLanguage: 'zh-CN', lookahead: 7, historyEnabled: false, historyMaxEntries: 9, uiEnabled: true, storyEnabled: false,
   model: 'shared-model', extraBody: { temperature: 0.1 }, disableThinking: true, thinkingPreset: 'qwen', requestTimeoutSeconds: 55,
   apiKey: 'PERSISTENT_TEST_KEY', rememberApiKey: true });
 for (const row of (await manager.list()).profiles) {
@@ -54,7 +56,7 @@ for (const row of (await manager.list()).profiles) {
   assert(engine.settings.uiEnabled && !engine.settings.storyEnabled);
   assert(!engine.settings.historyEnabled); assert.equal(engine.settings.historyMaxEntries, 9); assert.equal(engine.settings.requestTimeoutSeconds, 55);
   assert.equal(engine.settings.extraBody.temperature, 0.1); assert(engine.settings.disableThinking); assert.equal(engine.settings.thinkingPreset, 'qwen');
-  const publicData = await manager.view(row.id); assert.equal(publicData.targetLanguage, 'zh-CN');
+  const publicData = await manager.view(row.id); assert.equal(publicData.targetLanguage, 'zh-CN'); assert.equal(publicData.lookahead, 7);
   for (const field of ['apiKey', 'hasApiKey', 'apiBase', 'model', 'extraBody', 'customPrompt']) assert(!Object.hasOwn(publicData, field));
   assert(!JSON.stringify(publicData).includes('TEST_KEY'));
 }
@@ -65,6 +67,11 @@ assert.equal(storage.local.data.sharedTranslationApiKey, 'PERSISTENT_TEST_KEY');
 const restarted = new ProfileManager(deps); await restarted.ready;
 assert.equal((await restarted.get(late.profileId)).apiKey, 'PERSISTENT_TEST_KEY'); assert.equal((await restarted.get(id)).settings.customPrompt, 'アリス = Lady Alice.');
 assert.equal((await restarted.sharedView(true)).model, 'shared-model');
+assert.equal((await restarted.sharedView(true)).lookahead, 7);
+assert.equal((await restarted.get(late.profileId)).settings.lookahead, 7);
+assert.equal(validateSettings({}).lookahead, 2, 'Old settings without prefetch retain a useful default');
+for (const value of [0, 20]) assert.equal(validateSettings({ lookahead: value }).lookahead, value);
+for (const value of [-1, 21, 1.5]) assert.throws(() => validateSettings({ lookahead: value }), /0.*20/);
 
 await restarted.configure(null, { apiBase: 'https://new.example.test/v1' });
 for (const row of (await restarted.list()).profiles) assert.equal((await restarted.get(row.id)).apiKey, '', 'An endpoint change must clear the shared key for every profile');

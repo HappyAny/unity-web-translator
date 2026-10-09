@@ -31,6 +31,7 @@ f.chrome.runtime.sendMessage = message => { sent.push(structuredClone(message));
 await import('../extension/settings.js');
 async function waitUntil(check) { for (let i = 0; i < 100 && !check(); i++) await new Promise(resolve => setImmediate(resolve)); assert(check()); }
 await waitUntil(() => $('profileSelect').value === 'default' && $('profileName').focused);
+assert.equal($('lookahead').value, 2);
 assert.equal($('profileSelect').children[0].textContent, 'Default profile');
 assert.equal($('profileName').value, '');
 assert.equal($('settingsVersion').textContent, 'UNITY WEB TRANSLATOR · v0.9.0', 'Show the running manifest version even when source files have a newer package version');
@@ -39,11 +40,13 @@ const adventure = $('profileSelect').value; assert.notEqual(adventure, 'default'
 assert($('profileStatus').textContent.includes('empty cache'));
 $('provider').value = 'openai'; $('apiBase').value = 'https://api.example.test/v1'; $('model').value = 'test-model';
 $('customPrompt').value = 'アリス = Alice. メニュー = Main menu.'; $('targetLanguage').value = 'en'; $('apiKey').value = 'TEST_ONLY_NOT_SECRET'; $('rememberApiKey').checked = true;
+$('lookahead').value = '6';
 await $('settingsForm').listeners.submit({ preventDefault() {} });
 assert.equal((await f.chrome.runtime.sendMessage({ action: 'getSettings', profileId: adventure })).data.customPrompt, '', 'Saving the shared service must not save a profile prompt');
 await $('profileForm').listeners.submit({ preventDefault() {} });
 const saved = await f.chrome.runtime.sendMessage({ action: 'getSettings', profileId: adventure });
 assert.equal(saved.data.customPrompt, $('customPrompt').value); assert.equal(saved.data.targetLanguage, 'en'); assert(saved.data.hasApiKey);
+assert.equal(saved.data.lookahead, 6);
 assert.equal($('apiKey').value, ''); assert($('bodyPreview').textContent.includes('Main menu'));
 await $('test').click(); assert.equal(completions.length, 1); assert(completions[0].messages[0].content.includes('Main menu'));
 assert($('status').textContent.includes('succeeded')); assert($('testResult').textContent.includes('Translated test'));
@@ -58,6 +61,7 @@ $('personalOriginal').value = 'アリス'; $('personalTranslation').value = 'Lad
 assert.equal((await f.chrome.runtime.sendMessage({ action: 'getPersonalTranslation', profileId: adventure, payload: { original: 'アリス' } })).data.translation, 'Lady Alice');
 $('profileSelect').value = 'default'; await $('profileSelect').listeners.change();
 assert.equal($('provider').value, 'openai'); assert.equal($('targetLanguage').value, 'en'); assert.equal($('customPrompt').value, ''); assert.equal($('personalTranslation').value, '');
+assert.equal($('lookahead').value, 6, 'Prefetch is a shared preference across profiles');
 const sharedDefault = await f.chrome.runtime.sendMessage({ action: 'getSettings', profileId: 'default' });
 assert.equal(sharedDefault.data.apiBase, saved.data.apiBase); assert(sharedDefault.data.hasApiKey);
 $('personalOriginal').value = 'アリス'; await $('readPersonal').click(); assert.equal($('personalTranslation').value, '');

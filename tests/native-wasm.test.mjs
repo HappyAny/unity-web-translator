@@ -105,6 +105,7 @@ const adapter = globalThis.__UnityNativeLabels.create(exports, {
 });
 const source = managed('こんにちは<br>元気？');
 adapter.handlers.storyParse(() => {}, 100, 200, source, 0);
+await new Promise(resolve => setImmediate(resolve));
 assert.equal(deferred[0].text, 'こんにちは<br>元気？');
 const rendered = managed('こんにちは\n元気？');
 adapter.handlers.labelSet(exports.__uwt_original_labelSet, 300, rendered, 0);
@@ -121,6 +122,7 @@ let parseValue; adapter.handlers.storyParse((_pointer, _letters, value) => { par
 assert.equal(parseValue, source, 'A previous profile cannot prime the new profile cache');
 const script = managed('dotmessage,アリス,こんにちは,,,,\n'.repeat(100));
 adapter.handlers.scriptLoad(() => {}, 100, script, 0);
+await new Promise(resolve => setImmediate(resolve));
 assert(deferred.some(item => item.text === 'アリス'), 'Script prefetch reads strings beyond the label limit');
 const view = new DataView(memory.buffer); view.setUint32(500 + 16, 600, true);
 const first = managed('これは最初の全文です。'), next = managed('これは次の全文です。');

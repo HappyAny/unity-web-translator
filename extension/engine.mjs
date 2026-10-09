@@ -87,7 +87,7 @@ export class TranslationEngine {
     const settings = this.settings, revision = this.revision, providerRevision = this.providerRevision;
     const result = full ? { ...settings, rememberApiKey: this.rememberApiKey, hasApiKey: !!this.apiKey } :
       Object.fromEntries(['provider', 'storyEnabled', 'uiEnabled', 'paused', 'maxFreeCharacters', 'requestTimeoutSeconds',
-        'targetLanguage', 'interfaceLanguage', 'historyEnabled', 'historyMaxEntries', 'resourceRules'].map(key => [key, settings[key]]));
+        'lookahead', 'targetLanguage', 'interfaceLanguage', 'historyEnabled', 'historyMaxEntries', 'resourceRules'].map(key => [key, settings[key]]));
     return { ...result, revision,
       usedFreeCharacters: this.usageLedger ? (await this.usageLedger.current()).characters : (this.usage.date === this.date() ? this.usage.characters : 0),
       providerSignature: (await this.memoDigest(this.identity(settings).encoded)).slice(0, 16) + ':' + providerRevision };

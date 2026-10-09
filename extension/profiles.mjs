@@ -10,7 +10,7 @@ const REGISTRY = 'translationProfiles', SHARED = 'globalPreferences';
 const PROFILE_FIELDS = ['customPrompt', 'resourceRules'];
 const SHARED_FIELDS = Object.keys(DEFAULTS).filter(key => !PROFILE_FIELDS.includes(key));
 const PUBLIC_FIELDS = ['provider', 'storyEnabled', 'uiEnabled', 'paused', 'maxFreeCharacters', 'requestTimeoutSeconds',
-  'targetLanguage', 'interfaceLanguage', 'historyEnabled', 'historyMaxEntries'];
+  'lookahead', 'targetLanguage', 'interfaceLanguage', 'historyEnabled', 'historyMaxEntries'];
 const PREFERENCE_FIELDS = ['storyEnabled', 'uiEnabled', 'paused', 'interfaceLanguage'];
 const SERVICE_KEY = 'sharedTranslationApiKey';
 const select = (value, keys) => Object.fromEntries(keys.filter(key => Object.hasOwn(value, key)).map(key => [key, value[key]]));
@@ -141,7 +141,7 @@ export class ProfileManager {
   async view(id, full = false, snapshotRevision = null) {
     await this.ready;
     const revision = snapshotRevision ?? this.registry.revision, sharedRevision = this.sharedRevision, shared = { ...this.shared };
-    if (!id) return { ...select(shared, PUBLIC_FIELDS), resourceRules: [], storyEnabled: false, uiEnabled: false, profileId: null, profileRequired: true,
+    if (!id) return { ...select(shared, PUBLIC_FIELDS), resourceRules: [], storyEnabled: false, uiEnabled: false, lookahead: 0, profileId: null, profileRequired: true,
       revision, providerSignature: 'unbound', usedFreeCharacters: (await this.usageLedger.current()).characters };
     const item = { ...this.require(id) }, engine = await this.get(id), data = await engine.publicSettings(full);
     return { ...data, ...(full ? shared : select(shared, PUBLIC_FIELDS)), sharedRevision, profileId: id, profileName: item.name, profileRequired: false, revision, providerSignature: id + ':' + data.providerSignature };

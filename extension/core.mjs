@@ -4,7 +4,7 @@ export const DEFAULTS = Object.freeze({
   provider: 'mymemory', apiBase: 'http://127.0.0.1:1234/v1', model: '',
   storyEnabled: true, uiEnabled: false, paused: false, maxFreeCharacters: 3500,
   extraBody: {}, disableThinking: false, thinkingPreset: 'deepseek', requestTimeoutSeconds: 30,
-  targetLanguage: 'zh-CN', interfaceLanguage: 'zh-CN',
+  lookahead: 2, targetLanguage: 'zh-CN', interfaceLanguage: 'zh-CN',
   historyEnabled: false, historyMaxEntries: 10, customPrompt: '', resourceRules: [],
 });
 export const TARGET_LANGUAGES = Object.freeze({
@@ -45,6 +45,7 @@ export function validateSettings(value) {
   for (const key of ['storyEnabled', 'uiEnabled', 'paused', 'disableThinking', 'historyEnabled']) if (typeof settings[key] !== 'boolean') throw new Error('开关必须为布尔值');
   if (!Object.hasOwn(TARGET_LANGUAGES, settings.targetLanguage)) throw new Error('请选择有效的目标语言');
   if (!['zh-CN', 'en'].includes(settings.interfaceLanguage)) throw new Error('界面语言须为简体中文或英文');
+  if (!Number.isInteger(settings.lookahead) || settings.lookahead < 0 || settings.lookahead > 20) throw new Error('提前翻译句数须为 0 到 20 的整数');
   if (!Number.isInteger(settings.historyMaxEntries) || settings.historyMaxEntries < 1 || settings.historyMaxEntries > 20) throw new Error('历史参考句数须为 1 到 20 的整数');
   if (!Number.isInteger(settings.maxFreeCharacters) || settings.maxFreeCharacters < 0 || settings.maxFreeCharacters > 100000) throw new Error('每日提交预算须为 0 到 100000 的整数');
   if (!Number.isInteger(settings.requestTimeoutSeconds) || settings.requestTimeoutSeconds < 5 || settings.requestTimeoutSeconds > 90) throw new Error('请求超时须为 5 到 90 秒的整数');

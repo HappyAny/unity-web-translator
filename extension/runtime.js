@@ -8,12 +8,12 @@
   const pending = new Map(), held = new Set(), bindings = new Map();
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.13', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.14', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
   const signature = value => JSON.stringify([value.profileId, value.revision, value.providerSignature, value.paused,
-    value.storyEnabled, value.uiEnabled, value.historyEnabled, value.historyMaxEntries, value.resourceRules]);
+    value.storyEnabled, value.uiEnabled, value.lookahead, value.historyEnabled, value.historyMaxEntries, value.resourceRules]);
   function transport(action, payload, timeout = 10000) {
     if (disposed || pending.size >= 8) return Promise.reject(new Error('Translation bridge unavailable'));
     const id = 'u' + Date.now().toString(36) + '-' + (++sequence);
@@ -51,8 +51,7 @@
     try { rules = resources.validateRules(value.resourceRules || []); } catch { rules = []; }
     if (!value.historyEnabled || contextChanged) history = [];
     if (changed) {
-      nativeLabels?.invalidate();
-      epoch++; for (const cancel of held) cancel();
+      epoch++; nativeLabels?.invalidate(); for (const cancel of held) cancel();
       for (const binding of bindings.values()) { binding.generation++; try { binding.apply(binding.original); } catch { /* The owning game may have disposed its label. */ } }
       if (!value.paused && !value.profileRequired) for (const binding of bindings.values()) render(binding, false);
     }
@@ -169,24 +168,29 @@
       if (offset + binary.length === result.length) return result;
     }
   }
+  function recordDisplayed(binding, text) {
+    if (binding.options.kind === 'story' && prefs.historyEnabled && enabled('story')) {
+      history.push({ speaker: binding.options.speaker, text: binding.original, translation: text });
+      history = history.slice(-Math.min(20, prefs.historyMaxEntries || 10));
+    }
+  }
   function render(binding, recordHistory = true) {
     const generation = binding.generation;
     translate(binding.original, { ...binding.options, recordHistory: false }).then(text => {
       if (bindings.get(binding.id) === binding && binding.generation === generation && !disposed) try {
         binding.apply(text);
-        if (recordHistory && (binding.options.kind || 'story') === 'story' && prefs.historyEnabled && enabled('story')) {
-          history.push({ speaker: typeof binding.options.speaker === 'string' ? binding.options.speaker.slice(0, 150) : '', text: binding.original, translation: text });
-          history = history.slice(-Math.min(20, prefs.historyMaxEntries || 10));
-        }
+        if (recordHistory) recordDisplayed(binding, text);
       } catch { if (bindings.get(binding.id) === binding) bindings.delete(binding.id); }
     });
   }
-  function bind(id, original, apply, options = {}) {
+  function bind(id, original, apply, options = {}, prepared) {
     if (typeof id !== 'string' || !id || id.length > 100 || typeof original !== 'string' || original.length > 2000 || typeof apply !== 'function' || disposed || (!bindings.has(id) && bindings.size >= 256)) throw new Error('Invalid native text binding');
     const safeOptions = { kind: ['story', 'name', 'ui'].includes(options.kind) ? options.kind : 'story', speaker: typeof options.speaker === 'string' ? options.speaker.slice(0, 150) : '', ...(typeof options.scene === 'string' ? { scene: options.scene.slice(0, 128) } : {}) };
+    if (safeOptions.kind === 'story' && safeOptions.scene !== undefined && safeOptions.scene !== scene) { scene = safeOptions.scene; history = []; }
     const binding = { id, original, apply, options: safeOptions, generation: 0 }; bindings.set(id, binding);
-    try { apply(original); } catch (error) { bindings.delete(id); throw error; }
-    render(binding);
+    const ready = typeof prepared === 'string' && prepared.trim() && prepared.length <= 10000 && enabled(safeOptions.kind);
+    try { apply(ready ? prepared : original); } catch (error) { bindings.delete(id); throw error; }
+    if (ready) recordDisplayed(binding, prepared); else render(binding);
     return () => { if (bindings.get(id) === binding) bindings.delete(id); binding.generation++; };
   }
   function report() { if (disposed) return; detectUnity(); transport('reportRuntime', { ...stats, configuredRules: rules.length, profileId: prefs.profileId || null }).catch(() => {}); }
@@ -206,7 +210,7 @@
   const WrappedXHR = typeof NativeXHR === 'function' ? xhrAdapter.create(NativeXHR, { plan, transform, maxBytes: resources.limits.bytes }) : null;
   if (typeof nativeFetch === 'function') window.fetch = wrappedFetch;
   if (WrappedXHR) window.XMLHttpRequest = WrappedXHR;
-  const publicApi = Object.freeze({ version: stats.version, translate, bind, resetHistory: () => { history = []; scene = ''; } });
+  const publicApi = Object.freeze({ version: stats.version, translate, bind: (id, text, apply, options) => bind(id, text, apply, options), resetHistory: () => { history = []; scene = ''; } });
   window.UnityWebTranslator = publicApi;
   window.__UnityWebTranslator = Object.freeze({ version: stats.version, applyPreferences, synchronize, uninstall, diagnostics: () => ({ ...stats, paths: [...stats.paths], configuredRules: rules.length }) });
   if (globalThis.__UnityWasmTools && globalThis.__UnityNativeLabels) {
@@ -217,7 +221,8 @@
         nativeLabels = globalThis.__UnityNativeLabels.create(exports, {
           active: () => !disposed && !prefs.profileRequired && !prefs.paused,
           enabled, translate, bind, resetHistory: publicApi.resetHistory,
-          context: () => epoch, lookahead: () => prefs.prefetchLookahead ?? 3,
+          context: () => epoch, lookahead: () => prefs.lookahead ?? 2,
+          onPrefetch: (status, count) => console.info('[Unity Web Translator] prefetch=' + status + ' lines=' + count),
           font: build.font, layout: build.layout,
           onBound: () => { stats.nativeLabelCalls++; },
           onStory: () => { stats.nativeStoryCalls++; }, loadFont,
