@@ -4,7 +4,7 @@ import '../extension/native-font.js';
 const classicLayout = { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36 };
 const recentLayout = { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84 };
 function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, native = false, nativeLength = 1000,
-  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false } = {}) {
+  copy = false, empty = false, layout = classicLayout, grow = false, badReserve = false, originalCoverage = false, preferFallback = false } = {}) {
   const memory = new WebAssembly.Memory({ initial: 4 }), strings = new Map(), roots = new Set(), states = [];
   let cursor = 1000, handle = 1, font = 42, writes = 0, constructors = 0, assets = 0, initialized = 0, reserves = 0;
   const source = new Uint8Array(1000); new DataView(source.buffer).setUint32(0, 0x00010000, false); source[100] = 99;
@@ -32,7 +32,7 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
         if (!copy) new Uint8Array(memory.buffer, 22000, source.length).set(source);
       }
     },
-    __uwt_legacy_has_char: value => value === 900 && glyph && (!native || initialized) ? 1 : 0,
+    __uwt_legacy_has_char: value => (value === 42 && originalCoverage) || (value === 900 && glyph && (!native || initialized)) ? 1 : 0,
     __uwt_legacy_dynamic: () => native ? new DataView(memory.buffer).getInt32(21000 + layout.dynamic, true) === -2 : 1,
     __uwt_legacy_reserve_native(vector, count, alignment) {
       assert.deepEqual([vector, count, alignment], [21000 + layout.buffer, source.length, 1]); reserves++;
@@ -56,7 +56,7 @@ function fixture({ names = false, tmp = false, glyph = true, arrayType = 3, nati
     __uwt_font: () => font, __uwt_set_font(_pointer, value) { font = value; }, __uwt_add_chars() {},
   });
   const adapter = globalThis.__UnityNativeFont.create(exports, {
-    byteArrayTypeAddress: 100, legacyTypeAddress: 104, stringArrayTypeAddress: 108, legacyNamesArray: names, legacyEmptyConstructor: empty, createFontFromLegacy: tmp,
+    byteArrayTypeAddress: 100, legacyTypeAddress: 104, stringArrayTypeAddress: 108, legacyNamesArray: names, legacyEmptyConstructor: empty, legacyPreferFallback: preferFallback, createFontFromLegacy: tmp,
     ...(native ? { legacyNativeData: { ...layout, copy } } : {}),
     string(text) { const pointer = exports.malloc(text.length * 2 + 12); strings.set(pointer, text); return pointer; },
     load: async () => source, status: state => states.push(state),
@@ -82,6 +82,16 @@ for (const config of [{ tmp: true, layout: classicLayout }, { empty: true, layou
   const f = fixture({ ...config, native: true, copy: true }); await new Promise(resolve => setImmediate(resolve));
   if (config.tmp) f.adapter.apply(200, '动态字体', { font: 42 }); else f.adapter.applyLegacy(200, '动态字体', { font: 42 });
   assert.equal(f.font, config.tmp ? 901 : 900); assert.equal(f.initialized, 1); assert.equal(f.reserves, 1);
+  f.adapter.dispose(); assert.equal(f.roots.size, 0);
+}
+for (const preferFallback of [false, true]) {
+  const f = fixture({ native: true, copy: true, empty: true, layout: recentLayout, originalCoverage: true, preferFallback });
+  await new Promise(resolve => setImmediate(resolve));
+  f.adapter.applyLegacy(200, '完整显示游戏设置', { font: 42 });
+  assert.equal(f.font, preferFallback ? 900 : 42, 'The matched atlas override must not trust a false-positive coverage report');
+  assert.equal(f.constructors, preferFallback ? 1 : 0);
+  f.adapter.restoreLegacy(200, { font: 42 }); assert.equal(f.font, 42);
+  f.adapter.applyLegacy(200, 'Settings', { font: 42 }); assert.equal(f.font, 42, 'The atlas override leaves covered Latin text in its original font');
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
 for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false }, { native: true, nativeLength: 999 },

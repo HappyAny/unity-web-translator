@@ -78,7 +78,7 @@
     sha256: '71962a64c4e0f31ff858f2b83346de116d7709c5fbada7dbce468b27997206c6',
     importedFunctions: 589,
     runtimeExports: { memory: 'Yj', __indirect_function_table: 'yk', malloc: 'mk', free: 'nk' },
-    font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyEmptyConstructor: true,
+    font: { byteArrayTypeAddress: 5983264, legacyTypeAddress: 5951480, legacyEmptyConstructor: true, legacyPreferFallback: true,
       legacyNativeData: { data: 40, buffer: 124, length: 132, capacity: 136, dynamic: 84, copy: true } },
     layout: { message: { text: 8, name: 12, view: 24 } },
     hooks: [

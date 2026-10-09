@@ -22,6 +22,8 @@ Download the extension ZIP from [Releases](https://github.com/HappyAny/unity-web
 
 Providers, API keys, body parameters, reasoning presets, target language and switches are shared. Profiles isolate resource rules, additional prompts, automatic caches and personal translations. Seven target languages and English / Chinese settings are included. Export editable cache JSON and import personal corrections; API keys are excluded.
 
+On a matched legacy build where native coverage checks do not prevent missing visible characters, CJK translations prefer the bundled fallback. Covered Latin text keeps the original font. This override is fingerprint-gated, and pausing still restores the original font.
+
 The popup reports actual selected and replaced text. Pausing restores active bridge and supported native component bindings. Text already loaded into an application from JSON requires a page refresh to restore completely. Other integration paths rely on the Unity project's font configuration.
 
 To update, drop a new Release ZIP into the extension's update page and select the original `extension` folder, or run `update.cmd`. Retain the original installation and folder to keep settings and cache. Reload the extension, then refresh your pages.

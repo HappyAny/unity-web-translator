@@ -266,8 +266,9 @@
     function applyLegacy(pointer, text, state) {
       observeLegacy(pointer, text);
       const entry = legacyObserved.get(pointer); if (entry) entry.applied = true;
-      // Preserve an existing font when it already covers the translated characters.
-      if (state?.font && legacyAvailable) {
+      // A matched build can prefer the known CJK fallback over advertised native coverage.
+      const preferFallback = options.legacyPreferFallback && /[\u3400-\u9fff]/.test(text.replace(/<[^>]*>/g, ''));
+      if (!preferFallback && state?.font && legacyAvailable) {
         if (entry?.coverage?.text !== text) {
           let complete = true;
           try { for (const char of new Set(text.replace(/<[^>]*>/g, ''))) if (char.codePointAt(0) >= 32 && !exports.__uwt_legacy_has_char(state.font, char.codePointAt(0), 0)) { complete = false; break; } }
