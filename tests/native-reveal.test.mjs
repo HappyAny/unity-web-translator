@@ -55,6 +55,11 @@ assert.equal(adapter.handlers.labelProcessing(pointer => {
   assert.equal(read(labels.get(pointer)), '这是第一句完整对白。', 'Direct assignments are repaired before native text processing'); return 97;
 }, 1000, 0), 97);
 assert.equal(calls, beforeCalls); assert.equal(meshCalls, 1); assert.equal(progress, 0.65, 'Protected setter writes never replay the reveal renderer');
+for (const drawing of ['labelDrawing', 'meshDrawing']) {
+  labels.set(1000, first);
+  adapter.handlers[drawing](pointer => assert.equal(read(labels.get(pointer)), '这是第一句完整对白。'), 1000, 0);
+}
+assert.equal(calls, beforeCalls); assert.equal(meshCalls, 1); assert.equal(progress, 0.65, 'Native drawing guards preserve translated dialogue without replaying its printer');
 adapter.handlers.revealText(nativeRender, 1000, first, 0);
 assert.equal(read(labels.get(1000)), '这是第一句完整对白。', 'Repeated native assignments retain a prepared translation');
 progress = 1; entry.apply(read(first));

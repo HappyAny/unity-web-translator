@@ -36,7 +36,7 @@
   function rewrite(input, spec) {
     const bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
     if (bytes.length > maxBytes || bytes.length < 8 || [...bytes.subarray(0, 8)].join(',') !== '0,97,115,109,1,0,0,0') throw new Error('Invalid WASM module');
-    if (!spec?.hooks?.length || spec.hooks.length > 16) throw new Error('Invalid hook plan');
+    if (!spec?.hooks?.length || spec.hooks.length > 32) throw new Error('Invalid hook plan');
     const reader = cursor(bytes, 8), sections = [], byId = new Map();
     while (reader.offset < bytes.length) {
       const id = reader.byte(), length = reader.uint(), body = reader.take(length);

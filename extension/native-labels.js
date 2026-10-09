@@ -10,6 +10,12 @@
       { name: 'labelSet', function: 31008 }, { name: 'labelEnable', function: 31532 },
       { name: 'labelDisable', function: 31534 }, { name: 'labelDestroy', function: 31535 },
       { name: 'labelProcessing', function: 31180 },
+      { name: 'labelDrawing', function: 31510 }, { name: 'meshDrawing', function: 31452 },
+      { name: 'meshEnable', function: 31467 }, { name: 'meshDisable', function: 31468 },
+      { name: 'meshDestroy', function: 31469 },
+      { name: 'legacySet', function: 108362 }, { name: 'legacyEnable', function: 108386 },
+      { name: 'legacyDisable', function: 108387 }, { name: 'legacyDestroy', function: 30377 },
+      { name: 'legacyProcessing', function: 108393 },
       { name: 'storyParse', function: 67659 }, { name: 'nameSet', function: 56345 },
       { name: 'scriptLoad', function: 113268 },
       { name: 'balloonStart', function: 66103 },
@@ -25,7 +31,8 @@
       __uwt_color: 31017, __uwt_set_color: 31018, __uwt_property: 129310,
       __uwt_has_property: 129494, __uwt_material_color: 129475,
       __uwt_fallbacks: 14415, __uwt_clear_fallbacks: 31812, __uwt_dirty: 31134,
-      __uwt_balloon_complete: 66110 },
+      __uwt_balloon_complete: 66110, __uwt_legacy_text: 11263,
+      __uwt_legacy_font: 108359, __uwt_legacy_set_font: 108361 },
   }, {
     sha256: 'bd48af8399673bb377a0c4274432f53c0790b006050a2ecd50c8f9c72af6f406',
     importedFunctions: 701,
@@ -36,6 +43,7 @@
       { name: 'revealText', function: 139786 }, { name: 'nameSet', function: 139902 },
       { name: 'scriptPrefetch', function: 54652 },
       { name: 'labelProcessing', function: 34886 },
+      { name: 'labelDrawing', function: 33178 }, { name: 'meshDrawing', function: 33119 },
       { name: 'meshEnable', function: 33134 }, { name: 'meshDisable', function: 33135 },
       { name: 'meshDestroy', function: 33136 },
       { name: 'legacySet', function: 139210 }, { name: 'legacyEnable', function: 139234 },
@@ -64,6 +72,7 @@
       { name: 'labelSet', function: 133895 }, { name: 'labelEnable', function: 134421 },
       { name: 'labelDisable', function: 134413 }, { name: 'labelDestroy', function: 134408 },
       { name: 'labelProcessing', function: 8929 }, { name: 'meshEnable', function: 134710 },
+      { name: 'labelDrawing', function: 13676 }, { name: 'meshDrawing', function: 13690 },
       { name: 'meshDisable', function: 134709 }, { name: 'meshDestroy', function: 134708 },
       { name: 'legacySet', function: 184705 }, { name: 'legacyEnable', function: 73257 },
       { name: 'legacyDisable', function: 73256 }, { name: 'legacyDestroy', function: 43092 },
@@ -601,6 +610,7 @@
       },
     };
     handlers.meshEnable = handlers.labelEnable; handlers.meshDisable = handlers.labelDisable; handlers.meshDestroy = handlers.labelDestroy;
+    handlers.labelDrawing = handlers.labelProcessing; handlers.meshDrawing = handlers.labelProcessing;
     return { handlers, reset, invalidate: () => {
       translated.clear(); warming.clear(); prefetchGeneration++; prefetchBusy = false;
       if (scriptPlan) { scriptPlan.prepared.clear(); scriptPlan.ready = 0; }

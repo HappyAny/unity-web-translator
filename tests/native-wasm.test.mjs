@@ -27,6 +27,26 @@ assert.equal(instance.exports.__indirect_function_table.length, 2);
 assert.throws(() => tools.rewrite(fixture.subarray(0, -2), spec));
 assert.throws(() => tools.rewrite(fixture, { ...spec, hooks: [{ name: 'invalid', function: 1 }] }));
 
+const manyCount = 33, addBody = [0, 0x20, 0, 0x20, 1, 0x6a, 0x0b];
+const manyFixture = Uint8Array.from([0, 97, 115, 109, 1, 0, 0, 0,
+  ...section(1, [1, 0x60, 2, 0x7f, 0x7f, 1, 0x7f]),
+  ...section(3, [manyCount, ...new Array(manyCount).fill(0)]), ...section(4, [1, 0x70, 1, 1, 1]),
+  ...section(7, [3, ...text('first'), 0, 0, ...text('last'), 0, 31, ...text('__indirect_function_table'), 1, 0]),
+  ...section(10, [manyCount, ...Array.from({ length: manyCount }, () => [addBody.length, ...addBody]).flat()]),
+]);
+const manySpec = { importedFunctions: 0, hooks: Array.from({ length: 32 }, (_, index) => ({ name: 'slot' + index, function: index })) };
+const manyPatched = tools.rewrite(manyFixture, manySpec);
+assert(WebAssembly.validate(manyPatched.bytes));
+const manyNative = (await WebAssembly.instantiate(manyPatched.bytes)).instance.exports;
+for (const index of [0, 31]) {
+  const hook = manyPatched.hooks[index];
+  const typed = await WebAssembly.instantiate(tools.trampoline(hook.signature), { bridge: { call: (a, b) => manyNative[hook.alias](a, b) + index + 1 } });
+  manyNative.__indirect_function_table.set(hook.slot, typed.instance.exports.call);
+}
+assert.equal(manyNative.first(2, 3), 6); assert.equal(manyNative.last(2, 3), 37);
+assert.equal(manyNative.__indirect_function_table.length, 33);
+assert.throws(() => tools.rewrite(manyFixture, { importedFunctions: 0, hooks: Array.from({ length: 33 }, (_, index) => ({ name: 'slot' + index, function: index })) }), /Invalid hook plan/);
+
 const nativeInstantiate = WebAssembly.instantiate, states = [];
 let active = true;
 const restore = tools.install({ builds: [spec], enabled: () => active, createHandlers: () => ({ add: (original, a, b) => original(a, b) * 3 }), onStatus: value => states.push(value) });
