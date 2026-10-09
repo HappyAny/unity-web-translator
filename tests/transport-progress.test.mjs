@@ -51,6 +51,14 @@ vm.createContext(sandbox);
 for (const file of ['native-resources.js', 'native-xhr.js', 'bridge.js', 'runtime.js']) vm.runInContext(await fs.readFile(new URL('../extension/' + file, import.meta.url), 'utf8'), sandbox, { filename: file });
 await win.__UnityWebTranslator.synchronize();
 const flush = async () => { for (let index = 0; index < 20; index++) await new Promise(resolve => setImmediate(resolve)); };
+async function waitUntil(predicate, message) {
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {
+    assert(Date.now() < deadline, message);
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  await flush();
+}
 async function advance(milliseconds) {
   const end = now + milliseconds;
   while (true) {
@@ -62,10 +70,11 @@ async function advance(milliseconds) {
 }
 let completed = false;
 const translations = Promise.all(Array.from({ length: 4 }, (_, index) => win.UnityWebTranslator.translate(`待機中の説明${index}です。`, { kind: 'ui' }))).then(output => { completed = true; return output; });
-await flush(); assert.equal(held.length, 2);
+await waitUntil(() => held.length === 2, 'The first provider batch did not start');
 await advance(40000);
 assert.equal(completed, false, 'Provider queueing must not consume the page response deadline');
-for (const release of held.splice(0)) release(); await flush(); assert.equal(held.length, 2);
+for (const release of held.splice(0)) release();
+await waitUntil(() => held.length === 2, 'Queued provider requests did not start');
 await advance(40000);
 for (const release of held.splice(0)) release(); await flush();
 const output = await translations;
@@ -75,10 +84,11 @@ assert.equal(peakNetwork, 2); assert.equal(isolatedActive, 0);
 assert.equal(win.__UnityWebTranslator.diagnostics().failures, 0);
 
 const bounded = win.UnityWebTranslator.translate('期限を越える説明です。', { kind: 'ui' });
-await flush(); assert.equal(networkActive, 1);
+await waitUntil(() => networkActive === 1, 'The hard-deadline provider request did not start');
 await advance(15 * 60 * 1000 + 1);
 assert.equal(await bounded, '期限を越える説明です。', 'Progress cannot keep a hung request pending beyond the hard deadline');
-for (const release of held.splice(0)) release(); await flush();
+for (const release of held.splice(0)) release();
+await waitUntil(() => isolatedActive === 0, 'Late provider completion did not release the isolated bridge');
 assert.equal(isolatedActive, 0);
 assert.equal(timers.size, 0, 'Completion releases every progress and response timer');
 win.__UnityWebTranslator.uninstall();
