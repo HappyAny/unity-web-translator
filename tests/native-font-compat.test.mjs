@@ -109,10 +109,11 @@ for (const preferFallback of [false, true]) {
 }
 {
   const config = globalThis.__UnityNativeLabels.builds[2].font;
-  const f = fixture({ native: true, copy: true, tmp: true, originalCoverage: true, preferFallback: config.legacyPreferFallback });
+  const f = fixture({ native: true, copy: true, tmp: true, layout: config.legacyNativeData, originalCoverage: true, preferFallback: config.legacyPreferFallback });
   await new Promise(resolve => setImmediate(resolve));
   f.adapter.applyLegacy(200, '（对不起，生命的堡垒崩塌了。）', { font: 42 });
   assert.equal(f.font, 900, 'A matched custom renderer must use the CJK face even if its original font advertises coverage');
+  assert.equal(f.lineHeight, 64, 'The matched custom renderer needs face metrics recomputed before replacing its font');
   f.adapter.restoreLegacy(200, { font: 42 }); assert.equal(f.font, 42);
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
@@ -126,8 +127,8 @@ for (const config of [{ names: true, arrayType: 0 }, { names: true, glyph: false
   assert.equal(f.initialized, 0, 'Unverified native bytes never reach the initializer');
   f.adapter.dispose(); assert.equal(f.roots.size, 0);
 }
-for (const metricHeight of [0, 1, NaN, 1000]) {
-  const f = fixture({ native: true, copy: true, names: true, layout: recentLayout, metricHeight }); await new Promise(resolve => setImmediate(resolve));
+for (const layout of [recentLayout, globalThis.__UnityNativeLabels.builds[2].font.legacyNativeData]) for (const metricHeight of [0, 1, NaN, 1000]) {
+  const f = fixture({ native: true, copy: true, names: true, layout, metricHeight }); await new Promise(resolve => setImmediate(resolve));
   f.adapter.applyLegacy(200, '第一行\n第二行', { font: 42 });
   assert.equal(f.font, 42, 'Invalid native line height preserves the original font');
   assert.equal(f.states.at(-1), 'failed'); assert.equal(f.initialized, 1);

@@ -66,7 +66,8 @@
     importedFunctions: 612,
     runtimeExports: { memory: 'tk', __indirect_function_table: 'Sk', malloc: 'Nk', free: 'Ok' },
     font: { byteArrayTypeAddress: 8391080, legacyTypeAddress: 8398628, createFontFromLegacy: true, legacyPreferFallback: true,
-      legacyNativeData: { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36, copy: true } },
+      legacyNativeData: { data: 48, buffer: 76, length: 84, capacity: 88, dynamic: 36, copy: true,
+        metrics: { ascent: 176, lineHeight: 32, fontSize: 36 } } },
     layout: { novel: { body: 68, name: 72, textType: 8412656, pageData: 76, pageCommand: 84, pageMax: 104, pageCommands: 12, commandLineBreak: 29 } },
     hooks: [
       { name: 'labelSet', function: 133895 }, { name: 'labelEnable', function: 134421 },
@@ -364,8 +365,10 @@
         record.current.nativeLength = nativeLength; return record.current;
       }
       drop(pointer);
-      const stage = { record, command, value, text, full, fullValue, start, end, joiner, nativeLength, renderRoot: 0, renderValue: 0 };
-      novelCapture.commands++; novelCapture.last = { sourceStart: start, sourceEnd: end, currentCharacters: current.length, pageCharacters: total };
+      const capture = { sourceStart: start, sourceEnd: end, currentCharacters: current.length, pageCharacters: total,
+        nativeVisible: nativeLength, displayVisible: nativeLength, translated: false };
+      const stage = { record, command, value, text, full, fullValue, start, end, joiner, nativeLength, capture, renderRoot: 0, renderValue: 0 };
+      novelCapture.commands++; novelCapture.last = capture;
       record.current = stage; return stage;
     }
     function prepareNovelPrefetch(record, current) {
@@ -387,6 +390,9 @@
       } catch { /* Optional lookahead never changes native playback. */ }
     }
     function novelVisible(stage, length) {
+      // The native renderer treats every negative view length as show-all.
+      // The translated buffer contains only commands already reached by the player.
+      if (length < 0) return length;
       if (length < stage.start && stage.start > 0) return Math.floor(Math.max(0, length) * stage.prefixLength / stage.start);
       const progress = Math.min(1, Math.max(0, (length - stage.start) / Math.max(1, stage.end - stage.start)));
       return stage.prefixLength + Math.ceil(stage.currentLength * progress);
@@ -395,6 +401,7 @@
       if (output === stage.text) {
         original(pointer, stage.fullValue, info);
         exports.__uwt_original_novelLength(pointer, stage.nativeLength, 0);
+        Object.assign(stage.capture, { nativeVisible: stage.nativeLength, displayVisible: stage.nativeLength, translated: false });
         if (stage.renderRoot) exports.__uwt_unroot(stage.renderRoot);
         stage.renderRoot = stage.renderValue = 0; return;
       }
@@ -416,7 +423,9 @@
         font?.applyLegacy(pointer, renderText, slots.get(pointer)?.fontState);
         original(pointer, renderValue, info);
         exports.__uwt_novel_dirty?.(pointer, 0);
-        exports.__uwt_original_novelLength(pointer, novelVisible(stage, stage.nativeLength), 0);
+        const visible = novelVisible(stage, stage.nativeLength);
+        exports.__uwt_original_novelLength(pointer, visible, 0);
+        Object.assign(stage.capture, { nativeVisible: stage.nativeLength, displayVisible: visible, translated: true });
         stage.renderValue = renderValue; stage.renderRoot = renderRoot;
         if (stage.record.entries.size >= 128 && !stage.record.entries.has(stage.command)) stage.record.entries.delete(stage.record.entries.keys().next().value);
         stage.record.entries.set(stage.command, { start: stage.start, end: stage.end, output: output + stage.joiner });
@@ -534,7 +543,9 @@
         const slot = slots.get(pointer);
         if (slot?.novel) {
           slot.novel.nativeLength = length;
+          slot.novel.capture.nativeVisible = length;
           if (slot.novel.renderValue && slot.output !== slot.text && options.active() && options.enabled('story')) length = novelVisible(slot.novel, length);
+          slot.novel.capture.displayVisible = length;
         }
         return original(pointer, length, info);
       },

@@ -87,9 +87,18 @@ assert.equal(read(labels.get(body)), firstOutput + '\n', 'Translated text exclud
 assert.equal(lengths.at(-1)[1], Math.ceil(2 * (plain(firstOutput).length + 1) / (plain(first).length + 1)), 'The translation follows native reveal progress');
 adapter.handlers.novelLength(exports.__uwt_original_novelLength, body, plain(first).length + 1, 23);
 assert.equal(lengths.at(-1)[1], plain(firstOutput).length + 1);
+adapter.handlers.novelLength(exports.__uwt_original_novelLength, body, -1, 23);
+assert.equal(lengths.at(-1)[1], -1, 'The native show-all sentinel must remain visible rather than become a zero-character mask');
+adapter.handlers.novelLength(exports.__uwt_original_novelLength, body, -2, 23);
+assert.equal(lengths.at(-1)[1], -2, 'Every negative native view length denotes show-all');
+assert(!read(labels.get(body)).includes(second), 'Show-all still excludes commands the player has not advanced to');
 const firstRoots = roots.size, beforeWrites = writes.length;
 firstBinding.apply(firstOutput);
 assert.equal(roots.size, firstRoots); assert.equal(writes.length, beforeWrites, 'Repeated results do not restart the reveal');
+change(-1);
+assert.equal(lengths.at(-1)[1], -1, 'Cached writeback preserves a native instant-display mask');
+assert.equal(adapter.diagnostics().novel.last.displayVisible, -1);
+assert.equal(adapter.diagnostics().novel.last.translated, true);
 adapter.handlers.legacySet(exports.__uwt_original_legacySet, body, dataText.get(10000), 0);
 assert.equal(read(labels.get(body)), firstOutput + '\n', 'A repeated whole-page source cannot flash or reveal future text');
 
@@ -106,7 +115,7 @@ assert.equal(read(labels.get(body)), firstOutput + '\n现在显示第二句。\n
 assert.equal(lengths.at(-1)[1], plain(firstOutput).length + 1, 'The next segment initially reveals none of its new words');
 adapter.handlers.novelLength(exports.__uwt_original_novelLength, body, end, 23);
 assert.equal(lengths.at(-1)[1], plain(read(labels.get(body))).length);
-assert(!read(labels.get(body)).includes(third)); assert.equal(callbacks, 2, 'Writeback never replays commands or clicks');
+assert(!read(labels.get(body)).includes(third)); assert.equal(callbacks, 3, 'Writeback never replays commands or clicks');
 change(end);
 assert.equal(read(labels.get(body)), firstOutput + '\n现在显示第二句。\n', 'A same-command window reset retains the masked translation');
 adapter.invalidate(); secondBinding.apply('现在显示第二句。');

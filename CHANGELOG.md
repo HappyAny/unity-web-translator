@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.19
+
+- Preserve negative native novel view lengths, which mean show-all; translating them into zero had hidden dialogue in instant-display mode.
+- Keep show-all limited to the current translated click segment and completed prefixes; later pretranslated commands remain in the cache.
+- Recompute cached baseline and line height before applying the bundled CJK face to the matched custom renderer; reject invalid metrics and retain the original font.
+- Include text-free native and translated visibility counts in novel diagnostics.
+
 ## 0.2.18
 
 - Bind matched novel windows to the current native text command instead of translating an entire page of upcoming click segments.
