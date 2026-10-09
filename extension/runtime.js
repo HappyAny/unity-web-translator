@@ -5,22 +5,50 @@
   const resources = globalThis.__UnityTextResources, xhrAdapter = globalThis.__UnityTextXHR;
   if (!resources || !xhrAdapter) return;
   const channel = 'unity-web-translator-v1', responseEvent = channel + '-response', nativeFetch = window.fetch, NativeXHR = window.XMLHttpRequest;
-  const pending = new Map(), held = new Set(), bindings = new Map();
+  const pending = new Map(), queued = [], held = new Set(), bindings = new Map();
+  let transportScheduled = false;
   let prefs = { profileRequired: true, storyEnabled: false, uiEnabled: false, paused: true, resourceRules: [] }, rules = [], disposed = false;
   let sequence = 0, epoch = 0, scene = '', history = [], lastSignature = '', synchronizing, nativeLabels, disposeWasm;
-  const stats = { version: '0.2.14', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
+  const stats = { version: '0.2.15', unityDetected: false, lateInjection: document.readyState !== 'loading', requests: 0,
     matchedResources: 0, selectedStrings: 0, translatedStrings: 0, bridgeCalls: 0, failures: 0, opaqueRequests: 0, earlyResources: 0, paths: [] };
   stats.wasmStatus = 'waiting'; stats.nativeLabelCalls = 0; stats.nativeStoryCalls = 0; stats.fontStatus = 'waiting';
   const enabled = kind => !disposed && !prefs.profileRequired && !prefs.paused && (kind === 'ui' ? prefs.uiEnabled : prefs.storyEnabled);
   const signature = value => JSON.stringify([value.profileId, value.revision, value.providerSignature, value.paused,
     value.storyEnabled, value.uiEnabled, value.lookahead, value.historyEnabled, value.historyMaxEntries, value.resourceRules]);
-  function transport(action, payload, timeout = 10000) {
-    if (disposed || pending.size >= 8) return Promise.reject(new Error('Translation bridge unavailable'));
+  function scheduleTransport() {
+    if (disposed || transportScheduled) return;
+    transportScheduled = true;
+    // Let the isolated bridge release its completed slot before dispatching more work.
+    Promise.resolve().then(() => {}).then(() => { transportScheduled = false; drainTransport(); });
+  }
+  function drainTransport() {
+    if (disposed) return;
+    for (let index = queued.length - 1; index >= 0; index--) if (!queued[index].valid()) {
+      queued.splice(index, 1)[0].reject(new Error('Translation request canceled'));
+    }
+    while (pending.size < 6) {
+      const translations = [...pending.values()].filter(entry => entry.action === 'translate').length;
+      const index = queued.findIndex(entry => entry.action !== 'translate' || translations < 4);
+      if (index < 0) break;
+      const entry = queued.splice(index, 1)[0];
+      entry.timer = setTimeout(() => {
+        pending.delete(entry.id); entry.reject(new Error('Translation bridge timeout')); scheduleTransport();
+      }, entry.timeout);
+      pending.set(entry.id, entry);
+      try {
+        window.dispatchEvent(new CustomEvent(channel + '-request', { detail: JSON.stringify({ channel, direction: 'request', id: entry.id, action: entry.action, payload: entry.payload }) }));
+      } catch (error) { pending.delete(entry.id); clearTimeout(entry.timer); entry.reject(error); }
+    }
+  }
+  function transport(action, payload, timeout = 10000, valid = () => true) {
+    if (disposed || queued.length >= 512) return Promise.reject(new Error('Translation bridge unavailable'));
     const id = 'u' + Date.now().toString(36) + '-' + (++sequence);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Translation bridge timeout')); }, timeout);
-      pending.set(id, { resolve, reject, timer });
-      window.dispatchEvent(new CustomEvent(channel + '-request', { detail: JSON.stringify({ channel, direction: 'request', id, action, payload }) }));
+      const priority = action !== 'translate' ? 0 : payload.items?.some(item => item.kind === 'story' || item.kind === 'name') ? 1 : 2;
+      const entry = { id, action, payload, timeout, valid, priority, resolve, reject };
+      const index = queued.findIndex(item => item.priority > priority);
+      if (index < 0) queued.push(entry); else queued.splice(index, 0, entry);
+      scheduleTransport();
     });
   }
   function receive(event) {
@@ -30,6 +58,7 @@
     const entry = pending.get(message.id); if (!entry) return;
     pending.delete(message.id); clearTimeout(entry.timer);
     if (message.ok) entry.resolve(message.data); else entry.reject(new Error('Translation extension unavailable'));
+    scheduleTransport();
   }
   window.addEventListener(responseEvent, receive);
   function detectUnity() {
@@ -51,7 +80,7 @@
     try { rules = resources.validateRules(value.resourceRules || []); } catch { rules = []; }
     if (!value.historyEnabled || contextChanged) history = [];
     if (changed) {
-      epoch++; nativeLabels?.invalidate(); for (const cancel of held) cancel();
+      epoch++; nativeLabels?.invalidate(); scheduleTransport(); for (const cancel of held) cancel();
       for (const binding of bindings.values()) { binding.generation++; try { binding.apply(binding.original); } catch { /* The owning game may have disposed its label. */ } }
       if (!value.paused && !value.profileRequired) for (const binding of bindings.values()) render(binding, false);
     }
@@ -88,7 +117,8 @@
     try {
       result = await bounded(() => resources.translateJson(raw, candidate.fields, async items => {
         if (candidate.epoch !== epoch || disposed || prefs.paused) return { items };
-        const data = await transport('translate', { items }, Math.min(90000, (prefs.requestTimeoutSeconds || 30) * 1000) + 1000);
+        const data = await transport('translate', { items }, Math.min(90000, (prefs.requestTimeoutSeconds || 30) * 1000) + 1000,
+          () => candidate.epoch === epoch && !disposed && !prefs.paused);
         return data?.profileId === candidate.profileId ? data : { items };
       }),
         Math.min(15000, (prefs.requestTimeoutSeconds || 30) * 1000), signal);
@@ -137,18 +167,19 @@
   }
   async function translate(text, options = {}) {
     const kind = ['story', 'name', 'ui'].includes(options.kind) ? options.kind : 'story';
-    if (typeof text !== 'string' || !text.trim() || text.length > 2000 || !enabled(kind)) return text;
+    if (typeof text !== 'string' || !text.trim() || text.length > 2000 || !enabled(kind) || options.isCurrent?.() === false) return text;
     stats.bridgeCalls++;
     if (kind === 'story' && typeof options.scene === 'string' && options.scene.slice(0, 128) !== scene) { scene = options.scene.slice(0, 128); history = []; }
     const version = epoch, profileId = prefs.profileId, speaker = typeof options.speaker === 'string' ? options.speaker.slice(0, 150) : '';
     const reference = kind === 'story' && prefs.historyEnabled ? history.slice(-Math.min(20, prefs.historyMaxEntries || 10)).map(row => ({ ...row })) : [];
     let result = text;
     try {
-      const data = await transport('translate', { items: [{ id: 'current', text, kind, speaker, history: reference, native: true }] }, (prefs.requestTimeoutSeconds || 30) * 1000 + 1000);
+      const data = await transport('translate', { items: [{ id: 'current', text, kind, speaker, history: reference, native: true }] }, (prefs.requestTimeoutSeconds || 30) * 1000 + 1000,
+        () => version === epoch && enabled(kind) && options.isCurrent?.() !== false);
       const item = data?.items?.find(row => row.id === 'current');
       if (version !== epoch || !enabled(kind) || data?.profileId !== profileId) return text;
       if (typeof item?.text === 'string' && !item.error) result = item.text; else stats.failures++;
-    } catch { stats.failures++; }
+    } catch { if (version === epoch && enabled(kind) && options.isCurrent?.() !== false) stats.failures++; }
     if (version !== epoch || !enabled(kind)) return text;
     if (result !== text) stats.translatedStrings++;
     if (kind === 'story' && prefs.historyEnabled && options.recordHistory === true) {
@@ -176,7 +207,8 @@
   }
   function render(binding, recordHistory = true) {
     const generation = binding.generation;
-    translate(binding.original, { ...binding.options, recordHistory: false }).then(text => {
+    translate(binding.original, { ...binding.options, recordHistory: false,
+      isCurrent: () => bindings.get(binding.id) === binding && binding.generation === generation }).then(text => {
       if (bindings.get(binding.id) === binding && binding.generation === generation && !disposed) try {
         binding.apply(text);
         if (recordHistory) recordDisplayed(binding, text);
@@ -191,7 +223,7 @@
     const ready = typeof prepared === 'string' && prepared.trim() && prepared.length <= 10000 && enabled(safeOptions.kind);
     try { apply(ready ? prepared : original); } catch (error) { bindings.delete(id); throw error; }
     if (ready) recordDisplayed(binding, prepared); else render(binding);
-    return () => { if (bindings.get(id) === binding) bindings.delete(id); binding.generation++; };
+    return () => { if (bindings.get(id) === binding) bindings.delete(id); binding.generation++; scheduleTransport(); };
   }
   function report() { if (disposed) return; detectUnity(); transport('reportRuntime', { ...stats, configuredRules: rules.length, profileId: prefs.profileId || null }).catch(() => {}); }
   function uninstall() {
@@ -201,6 +233,7 @@
     for (const binding of bindings.values()) try { binding.apply(binding.original); } catch { /* Label disposed. */ }
     bindings.clear(); window.removeEventListener(responseEvent, receive);
     nativeLabels?.dispose(); disposeWasm?.();
+    for (const entry of queued.splice(0)) entry.reject(new Error('Translation disposed'));
     for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject(new Error('Translation disposed')); } pending.clear();
     if (window.fetch === wrappedFetch) window.fetch = nativeFetch;
     if (window.XMLHttpRequest === WrappedXHR) window.XMLHttpRequest = NativeXHR;

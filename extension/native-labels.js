@@ -222,7 +222,8 @@
       if (warming.has(id)) return warming.get(id);
       const work = Promise.resolve().then(() => {
         if (disposed || generation !== scene || context !== options.context?.() || !options.active() || !options.enabled(kind)) return text;
-        return options.translate(text, { kind, speaker: name, recordHistory: false });
+        return options.translate(text, { kind, speaker: name, recordHistory: false,
+          isCurrent: () => !disposed && generation === scene && context === options.context?.() });
       }).then(result => {
         if (!disposed && generation === scene && context === options.context?.() && warming.get(id) === work && typeof result === 'string' && result !== text) {
           if (translated.size >= 4096) translated.delete(translated.keys().next().value);
