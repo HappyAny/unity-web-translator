@@ -42,12 +42,19 @@ assert.equal(await createCache(indexedDB, 'profile-cache-0').get('key-0'), 'x'.r
 const lru = new LruCache({ maxEntries: 2, maxBytes: 1000 }); lru.set('a', '1'); lru.set('b', '2'); assert.equal(lru.get('a'), '1'); lru.set('c', '3');
 assert.equal(lru.get('b'), CACHE_MISS); lru.set('too-large', 'x'.repeat(1000)); assert.equal(lru.get('too-large'), CACHE_MISS); assert(lru.bytes <= 1000);
 
-let release;
+let release, notifyRequest;
+const requestStarted = new Promise(resolve => { notifyRequest = resolve; });
 const delayed = new TranslationEngine({ storage: { local: area(), session: area() }, cache: createCache(new IDBFactory()), glossary: {}, permitted: async () => true,
-  fetchImpl: () => new Promise(resolve => { release = resolve; }) });
+  fetchImpl: () => new Promise(resolve => { release = resolve; notifyRequest(); }) });
 await delayed.configure({ provider: 'openai', model: 'delayed-cache-model', apiBase: 'https://api.example.test/v1' });
 const pending = delayed.translate([{ id: 'late', text: 'これは古い応答です。' }]);
-for (let i = 0; !release && i < 50; i++) await new Promise(resolve => setImmediate(resolve)); assert(release);
+let startTimeout;
+try {
+  await Promise.race([requestStarted, new Promise((_resolve, reject) => {
+    startTimeout = setTimeout(() => reject(new Error('Delayed provider request did not start')), 5000);
+  })]);
+} finally { clearTimeout(startTimeout); }
+assert(release);
 await delayed.invalidateTranslations(); await delayed.cache.clear();
 release({ ok: true, json: async () => ({ choices: [{ message: { content: '过期响应' } }] }) });
 assert.equal((await pending).items[0].error, 'TranslationChanged'); assert.equal((await delayed.cache.stats()).automatic, 0);
